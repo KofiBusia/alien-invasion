@@ -8,10 +8,10 @@ source.include_exts = py,json
 
 version = 1.0
 
-# SDL2 bootstrap is required for pygame apps
 p4a.bootstrap = sdl2
 
-requirements = python3,kivy,pygame
+# Let p4a pick compatible python3 version automatically; only pin pygame
+requirements = python3,pygame
 
 orientation = landscape
 
@@ -25,7 +25,6 @@ android.archs = arm64-v8a
 
 fullscreen = 1
 
-# Release signing (JKS keystore restored by CI)
 android.keystore = release.jks
 android.keystore_password = AlienInvasion2024!
 android.keyalias = alieninvasion
