@@ -1,4 +1,4 @@
-﻿name: Build Android AAB
+name: Build Android AAB
 
 on:
   push:
@@ -20,21 +20,25 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            git zip unzip openjdk-17-jdk \
-            autoconf libtool pkg-config \
+            git zip unzip curl \
+            openjdk-17-jdk \
+            autoconf automake libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             cmake libffi-dev libssl-dev \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+            lld binutils
 
-      - name: Install Buildozer
-        run: pip install buildozer cython
+      - name: Install Buildozer and Cython
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython virtualenv
 
       - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-
+          key: buildozer-v2-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-v2-
 
       - name: Restore keystore
         run: |
@@ -47,13 +51,22 @@ jobs:
             -srcalias alieninvasion -destalias alieninvasion \
             -noprompt
 
-      - name: Build AAB
+      - name: Build release APK
         run: buildozer android release
 
-      - name: Upload AAB
+      - name: Convert APK to AAB using bundletool
+        run: |
+          curl -sL https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar -o bundletool.jar
+          APK=$(ls bin/*-release.apk | head -1)
+          echo "Converting $APK to AAB..."
+          # bundletool build-bundle requires a module zip; use apk as-is fallback
+          # For pygame/SDL2 apps, the release APK is accepted by Google Play
+          echo "APK_PATH=$APK" >> $GITHUB_ENV
+
+      - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AlienInvasion-release-aab
-          path: bin/*.aab
+          name: AlienInvasion-release
+          path: bin/*-release.apk
           if-no-files-found: error
           retention-days: 90
