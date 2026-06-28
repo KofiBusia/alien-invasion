@@ -22,6 +22,8 @@ android.minapi = 21
 
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,VIBRATE
 
+android.accept_sdk_license = True
+
 android.archs = arm64-v8a
 
 # Fullscreen — no title bar
