@@ -1,0 +1,24 @@
+# Buildozer output
+.buildozer/
+bin/
+
+# PyInstaller output
+build/
+dist/
+*.spec
+
+# Save file (personal progress)
+savegame.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+Desktop.ini

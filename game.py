@@ -1,0 +1,936 @@
+"""Main game class: state machine, event loop, collision resolution."""
+
+import sys
+import random
+import math
+import pygame
+
+from settings import (
+    SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE,
+    TOTAL_LEVELS, ACHIEVEMENTS, POWERUP_CONFIGS, get_level_config, GOLD,
+    IS_ANDROID
+)
+from save_system  import SaveSystem
+from audio        import AudioManager
+from particles    import ParticleSystem
+from background   import Background
+from player       import Player
+from levels       import LevelManager
+from shop         import Shop
+from ui           import UIManager
+from quiz         import QuizManager
+
+
+STATES = frozenset([
+    'MAIN_MENU', 'PLAYING', 'PAUSED', 'SHOP',
+    'GAME_OVER', 'VICTORY', 'QUIZ',
+    'SETTINGS', 'HIGH_SCORES', 'HOW_TO_PLAY',
+])
+
+_BACK = {
+    'SETTINGS':    None,
+    'HIGH_SCORES': 'MAIN_MENU',
+    'HOW_TO_PLAY': 'MAIN_MENU',
+}
+
+
+class Game:
+    def __init__(self):
+        pygame.init()
+        if IS_ANDROID:
+            # On Android: render game to a fixed logical surface then scale to display
+            self._display = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            self.screen   = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        else:
+            self._display = None
+            self.screen   = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption(TITLE)
+        self.clock  = pygame.time.Clock()
+
+        # Core systems
+        self.save       = SaveSystem()
+        self.audio      = AudioManager(self.save)
+        self.particles  = ParticleSystem()
+        self.background = Background()
+
+        # Sprite groups
+        self.all_sprites   = pygame.sprite.Group()
+        self.player_group  = pygame.sprite.GroupSingle()
+        self.enemies       = pygame.sprite.Group()
+        self.boss_group    = pygame.sprite.Group()
+        self.player_bullets= pygame.sprite.Group()
+        self.enemy_bullets = pygame.sprite.Group()
+        self.powerups      = pygame.sprite.Group()
+        self.coins_group   = pygame.sprite.Group()
+
+        self.player        = None
+        self.level_manager = None
+        self.level_cfg     = get_level_config(1)
+        self.current_level = 1
+
+        self.ui   = UIManager(self)
+        self.shop = Shop(self)
+        self.quiz = QuizManager(self)
+
+        # State
+        self._state           = 'MAIN_MENU'
+        self._prev_state      = 'MAIN_MENU'
+        self._settings_origin = 'MAIN_MENU'
+        self._font_fps        = pygame.font.SysFont('consolas', 14)
+        self._pending_achievement: list[str] = []
+
+        self._q_held = self._e_held = False
+
+        # ── Display / fullscreen ─────────────────────────────────────────────
+        self._fullscreen = False
+
+        # ── Mouse / touch input ───────────────────────────────────────────────
+        self._mouse_target  = None   # (x, y) when mouse/touch active
+        self._mouse_firing  = False
+        self._touch_fingers: dict = {}   # finger_id -> (x, y)
+        self._fire_finger   = None       # finger id controlling fire
+        self._move_finger   = None       # finger id controlling movement
+
+        # On-screen button rects (drawn in playing state for touch)
+        self._obtn_fire = pygame.Rect(SCREEN_WIDTH-120, SCREEN_HEIGHT-155, 100, 100)
+        self._obtn_prev = pygame.Rect(SCREEN_WIDTH-230, SCREEN_HEIGHT-75,  90,  55)
+        self._obtn_next = pygame.Rect(SCREEN_WIDTH-130, SCREEN_HEIGHT-75,  90,  55)
+
+        # ── Combat juice ──────────────────────────────────────────────────────
+        # Combo system
+        self._combo      = 0          # consecutive kills
+        self._combo_mult = 1.0        # score multiplier (1.0 + combo * 0.1)
+        self._combo_timer= 0          # frames until combo resets
+
+        # Screen flash (damage / pickup / boss rage)
+        self._flash_surf   = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        self._flash_alpha  = 0
+        self._flash_color  = (255, 0, 0)
+
+        # Glow / bloom layer
+        self._glow_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self._glow_surf.set_colorkey((0, 0, 0))
+
+        # Chromatic aberration: frames remaining + strength
+        self._chroma_frames   = 0
+        self._chroma_strength = 0
+
+        # Hitstop: freeze game updates for N frames on big hits
+        self._hitstop_frames  = 0
+
+        self.audio.play_music('bg')
+
+    # ── State machine ─────────────────────────────────────────────────────────
+    def change_state(self, new_state: str):
+        assert new_state in STATES, f'Unknown state: {new_state}'
+        self._prev_state = self._state
+        self._state      = new_state
+
+        if new_state == 'PLAYING' and self._prev_state == 'PAUSED':
+            self._mouse_firing = False
+        elif new_state == 'SHOP':
+            self.shop.open()
+        elif new_state == 'MAIN_MENU':
+            self.audio.stop_music()
+            self.audio.play_music('bg')
+        elif new_state == 'QUIZ':
+            self.quiz.start(self.current_level)
+        elif new_state == 'GAME_OVER':
+            self._finalize_run()
+            self.audio.stop_music()
+            self.audio.play('gameover')
+        elif new_state == 'VICTORY':
+            self._finalize_run()
+            self.audio.stop_music()
+            self.audio.play('victory')
+
+    # ── Game start / reset ────────────────────────────────────────────────────
+    def start_new_game(self, level: int = 1):
+        self._clear_sprites()
+        self.current_level = level
+        self.level_cfg     = get_level_config(level)
+
+        self.player = Player(self)
+        self.player_group.add(self.player)
+        self.all_sprites.add(self.player)
+
+        self.level_manager = LevelManager(self)
+        self.level_manager.start_level(level)
+
+        # Reset combo on new game
+        self._combo       = 0
+        self._combo_mult  = 1.0
+        self._combo_timer = 0
+
+        self.ui.ensure_secondary_menus()
+        self.change_state('PLAYING')
+
+    def _next_level(self):
+        self.current_level += 1
+        if self.current_level > TOTAL_LEVELS:
+            self.change_state('VICTORY')
+            return
+        self._clear_enemies_and_bullets()
+        self.level_cfg = get_level_config(self.current_level)
+        self.level_manager.start_level(self.current_level)
+        self.change_state('PLAYING')
+
+    def _clear_sprites(self):
+        self.all_sprites.empty()
+        self.player_group.empty()
+        self.enemies.empty()
+        self.boss_group.empty()
+        self.player_bullets.empty()
+        self.enemy_bullets.empty()
+        self.powerups.empty()
+        self.coins_group.empty()
+
+    def _clear_enemies_and_bullets(self):
+        for grp in (self.enemies, self.boss_group, self.player_bullets,
+                    self.enemy_bullets, self.powerups, self.coins_group):
+            for s in list(grp):
+                s.kill()
+
+    def _finalize_run(self):
+        if self.player:
+            self.save.update_high_score(self.player.score)
+            self.save.add_coins(self.player.coins)
+            self.player.coins = 0
+        self._check_achievements()
+        self.save.save()
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+    def run(self):
+        while True:
+            dt = self.clock.tick(FPS)
+            self._handle_events()
+            self._update()
+            self._draw()
+
+    # ── Events ────────────────────────────────────────────────────────────────
+    def _handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.save.save()
+                pygame.quit()
+                sys.exit()
+
+            # Global F11 fullscreen toggle (works in any state)
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                self._toggle_fullscreen()
+
+            if self._state == 'MAIN_MENU':
+                self._handle_main_menu_event(event)
+            elif self._state == 'PLAYING':
+                self._handle_playing_event(event)
+            elif self._state == 'PAUSED':
+                self._handle_pause_event(event)
+            elif self._state == 'QUIZ':
+                self.quiz.handle_event(event)
+            elif self._state == 'SHOP':
+                if self.shop.handle_event(event):
+                    self._next_level()
+            elif self._state == 'GAME_OVER':
+                self._handle_game_over_event(event)
+            elif self._state == 'VICTORY':
+                self._handle_victory_event(event)
+            elif self._state == 'SETTINGS':
+                result = self.ui.handle_settings(event)
+                if result == 'back':
+                    self.change_state(self._settings_origin)
+            elif self._state == 'HIGH_SCORES':
+                result = self.ui.handle_high_scores(event)
+                if result == 'BACK':
+                    self.change_state('MAIN_MENU')
+            elif self._state == 'HOW_TO_PLAY':
+                result = self.ui.handle_how_to_play(event)
+                if result == 'BACK':
+                    self.change_state('MAIN_MENU')
+
+    def _handle_main_menu_event(self, event):
+        label = self.ui.handle_main_menu(event)
+        if label == 'NEW GAME':
+            self.save.set('current_coins', 0)
+            self.start_new_game(1)
+        elif label == 'CONTINUE':
+            bl  = self.save.get('best_level', 0)
+            lvl = max(1, bl) if bl > 0 else 1
+            self.start_new_game(lvl)
+        elif label == 'HOW TO PLAY':
+            self.ui.ensure_secondary_menus()
+            self.change_state('HOW_TO_PLAY')
+        elif label == 'HIGH SCORES':
+            self.ui.ensure_secondary_menus()
+            self.change_state('HIGH_SCORES')
+        elif label == 'SETTINGS':
+            self._settings_origin = 'MAIN_MENU'
+            self.ui.ensure_secondary_menus()
+            self.change_state('SETTINGS')
+        elif label == 'QUIT':
+            self.save.save()
+            pygame.quit()
+            sys.exit()
+
+    def _handle_playing_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_ESCAPE, pygame.K_p):
+                self.change_state('PAUSED')
+            elif event.key == pygame.K_q:
+                self.player.switch_weapon(-1)
+                self.audio.play('click')
+            elif event.key == pygame.K_e:
+                self.player.switch_weapon(1)
+                self.audio.play('click')
+            elif event.key == pygame.K_F11:
+                self._toggle_fullscreen()
+
+        if event.type == pygame.MOUSEWHEEL:
+            self.player.switch_weapon(-event.y)
+
+        # Mouse: move ship to mouse position + fire
+        if event.type == pygame.MOUSEMOTION:
+            mx, my = event.pos
+            # Avoid setting target when cursor is over HUD
+            if my < SCREEN_HEIGHT - 80:
+                self._mouse_target = (float(mx), float(my))
+            else:
+                self._mouse_target = None
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                mx, my = event.pos
+                if self._obtn_fire.collidepoint(mx, my):
+                    self._mouse_firing = True
+                elif self._obtn_prev.collidepoint(mx, my):
+                    self.player.switch_weapon(-1)
+                    self.audio.play('click')
+                elif self._obtn_next.collidepoint(mx, my):
+                    self.player.switch_weapon(1)
+                    self.audio.play('click')
+                else:
+                    self._mouse_firing = True
+            elif event.button == 3:   # right click → switch weapon
+                self.player.switch_weapon(1)
+                self.audio.play('click')
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self._mouse_firing = False
+
+        # Touch finger events
+        if event.type == pygame.FINGERDOWN:
+            self._on_finger_down(event.finger_id, event.x, event.y)
+        if event.type == pygame.FINGERMOTION:
+            self._on_finger_motion(event.finger_id, event.x, event.y)
+        if event.type == pygame.FINGERUP:
+            self._on_finger_up(event.finger_id)
+
+    def _toggle_fullscreen(self):
+        if IS_ANDROID:
+            return   # always fullscreen on Android
+        self._fullscreen = not self._fullscreen
+        flags = pygame.FULLSCREEN if self._fullscreen else 0
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
+
+    def _on_finger_down(self, fid, fx, fy):
+        x, y = fx * SCREEN_WIDTH, fy * SCREEN_HEIGHT
+        self._touch_fingers[fid] = (x, y)
+        # Right half of screen = fire
+        if x > SCREEN_WIDTH * 0.6:
+            self._fire_finger   = fid
+            self._mouse_firing  = True
+        else:
+            self._move_finger   = fid
+            self._mouse_target  = (x, y)
+
+    def _on_finger_motion(self, fid, fx, fy):
+        x, y = fx * SCREEN_WIDTH, fy * SCREEN_HEIGHT
+        self._touch_fingers[fid] = (x, y)
+        if fid == self._move_finger:
+            self._mouse_target = (x, y)
+
+    def _on_finger_up(self, fid):
+        self._touch_fingers.pop(fid, None)
+        if fid == self._fire_finger:
+            self._fire_finger  = None
+            self._mouse_firing = False
+        if fid == self._move_finger:
+            self._move_finger  = None
+
+    def _handle_pause_event(self, event):
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_p):
+            self.change_state('PLAYING')
+            return
+        label = self.ui.handle_pause(event)
+        if label == 'RESUME':
+            self.change_state('PLAYING')
+        elif label == 'SETTINGS':
+            self._settings_origin = 'PAUSED'
+            self.ui.ensure_secondary_menus()
+            self.change_state('SETTINGS')
+        elif label == 'MAIN MENU':
+            self._finalize_run()
+            self.change_state('MAIN_MENU')
+        elif label == 'QUIT':
+            self.save.save()
+            pygame.quit()
+            sys.exit()
+
+    def _handle_game_over_event(self, event):
+        label = self.ui.handle_game_over(event)
+        if label == 'TRY AGAIN':
+            self.save.set('current_coins', 0)
+            self.start_new_game(1)
+        elif label == 'MAIN MENU':
+            self.change_state('MAIN_MENU')
+        elif label == 'QUIT':
+            self.save.save()
+            pygame.quit()
+            sys.exit()
+
+    def _handle_victory_event(self, event):
+        label = self.ui.handle_victory(event)
+        if label == 'PLAY AGAIN':
+            self.save.set('current_coins', 0)
+            self.start_new_game(1)
+        elif label == 'MAIN MENU':
+            self.change_state('MAIN_MENU')
+        elif label == 'QUIT':
+            self.save.save()
+            pygame.quit()
+            sys.exit()
+
+    # ── Update ────────────────────────────────────────────────────────────────
+    def _update(self):
+        self.background.update()
+        self.ui.update()
+        self.particles.update()
+
+        # Decay screen flash
+        if self._flash_alpha > 0:
+            self._flash_alpha = max(0, self._flash_alpha - 8)
+
+        if self._state == 'PLAYING':
+            self._update_playing()
+        elif self._state == 'QUIZ':
+            self.quiz.update()
+            if self.quiz.done:
+                self.change_state('SHOP')
+        elif self._state == 'SHOP':
+            self.shop.update()
+
+    def _update_playing(self):
+        # Hitstop — freeze game simulation for a few frames on big hits
+        if self._hitstop_frames > 0:
+            self._hitstop_frames -= 1
+            # Still update particles and background for juice
+            self.particles.update()
+            self.background.update()
+            return
+        self.all_sprites.update()
+        self.level_manager.update()
+        self._handle_collisions()
+        self._handle_coin_magnet()
+        self._process_bomb_effect()
+        self._check_achievements()
+
+        # Decay combo timer
+        if self._combo_timer > 0:
+            self._combo_timer -= 1
+            if self._combo_timer == 0 and self._combo >= 3:
+                self.ui.show_message(
+                    f'COMBO x{self._combo} ENDED',
+                    SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
+                    (255, 200, 50), 'md')
+        if self._combo_timer == 0 and self._combo > 0:
+            self._combo      = 0
+            self._combo_mult = 1.0
+
+    # ── Combo ─────────────────────────────────────────────────────────────────
+    def _on_kill(self, enemy):
+        """Call whenever an enemy is destroyed — handles combo + score mult."""
+        self._combo      += 1
+        self._combo_timer = 220   # ~3.6 s at 60 fps
+        self._combo_mult  = min(5.0, 1.0 + self._combo * 0.1)
+
+        # Milestone combos get a fanfare
+        if self._combo in (5, 10, 20, 50):
+            cols = {5:(255,220,50), 10:(255,140,20), 20:(255,50,200), 50:(50,255,255)}
+            col  = cols[self._combo]
+            self.ui.show_message(
+                f'{self._combo}x COMBO!',
+                enemy.x if hasattr(enemy,'x') else SCREEN_WIDTH//2,
+                (enemy.y if hasattr(enemy,'y') else SCREEN_HEIGHT//2) - 30,
+                col, 'lg')
+            self.particles.stars_burst(
+                int(enemy.x if hasattr(enemy,'x') else SCREEN_WIDTH//2),
+                int(enemy.y if hasattr(enemy,'y') else SCREEN_HEIGHT//2), 30)
+
+    def screen_flash(self, color=(255,0,0), alpha=90):
+        """Trigger a full-screen color flash (damage, boss, etc.)."""
+        self._flash_color = color
+        self._flash_alpha = max(self._flash_alpha, alpha)
+
+    # ── Collision detection ───────────────────────────────────────────────────
+    def _handle_collisions(self):
+        player = self.player
+
+        # Player bullets vs enemies
+        hits = pygame.sprite.groupcollide(
+            self.player_bullets, self.enemies, False, False,
+            collided=pygame.sprite.collide_rect)
+        for bullet, enemies_hit in hits.items():
+            for enemy in enemies_hit:
+                dmg = bullet.damage
+                # Critical hit
+                is_crit = random.random() < player.crit_chance
+                if is_crit:
+                    dmg = int(dmg * 2.0)
+
+                killed = enemy.take_damage(dmg)
+                kind = 'crit' if is_crit else 'normal'
+                self.particles.damage_number(
+                    bullet.rect.centerx, bullet.rect.centery - 10, dmg, kind)
+                self.particles.hit_sparks(
+                    bullet.rect.centerx, bullet.rect.centery,
+                    bullet.color if bullet.color else (255, 255, 100))
+                if is_crit:
+                    self._hitstop_frames = max(self._hitstop_frames, 3)
+                    self.particles.fire_ring(
+                        bullet.rect.centerx, bullet.rect.centery,
+                        (255,200,0), count=12, radius=16)
+
+                if killed:
+                    base_score = int(enemy.score_val * self._combo_mult)
+                    player.score += base_score - enemy.score_val
+                    self._on_kill(enemy)
+                    self.ui._kill_flash = 22     # flash kill counter in HUD
+                    self.particles.fire_ring(
+                        int(enemy.x), int(enemy.y),
+                        enemy.color, count=18, radius=26)
+
+                bullet.kill()
+                break
+
+        # Player bullets vs boss
+        for bullet in list(self.player_bullets):
+            for boss in list(self.boss_group):
+                if bullet.rect.colliderect(boss.rect):
+                    dmg     = bullet.damage
+                    is_crit = random.random() < player.crit_chance
+                    if is_crit:
+                        dmg = int(dmg * 2.0)
+
+                    killed  = boss.take_damage(dmg)
+                    kind    = 'crit' if is_crit else 'normal'
+                    self.particles.damage_number(
+                        bullet.rect.centerx, bullet.rect.centery - 10, dmg, kind)
+                    self.particles.hit_sparks(
+                        bullet.rect.centerx, bullet.rect.centery, (255, 100, 50))
+                    if is_crit:
+                        self._hitstop_frames = max(self._hitstop_frames, 4)
+                        self.particles.fire_ring(
+                            bullet.rect.centerx, bullet.rect.centery,
+                            (255,200,0), count=16, radius=20)
+                    bullet.kill()
+                    self.save.increment_stat('damage_dealt', dmg)
+
+                    if killed:
+                        self._on_kill(boss)
+                    break
+
+        # Enemy bullets vs player
+        for bullet in list(self.enemy_bullets):
+            if bullet.rect.colliderect(player.rect):
+                dmg = bullet.damage
+                player.take_damage(dmg)
+                bullet.kill()
+                if dmg > 0:
+                    self.particles.damage_number(
+                        player.rect.centerx, player.rect.top - 10, dmg, 'player')
+                    self.screen_flash((220, 30, 30), 80)
+                    self._chroma_frames   = 7
+                    self._chroma_strength = 5
+                if hasattr(bullet, 'explosive') and bullet.explosive:
+                    self.particles.explosion(
+                        bullet.rect.centerx, bullet.rect.centery,
+                        (255, 140, 0), count=20)
+
+        # Enemy contact with player
+        for enemy in list(self.enemies):
+            if enemy.rect.colliderect(player.rect):
+                dmg = enemy.damage
+                player.take_damage(dmg)
+                enemy.take_damage(enemy.max_health)
+                if dmg > 0:
+                    self.screen_flash((220, 30, 30), 80)
+                    self._chroma_frames   = 8
+                    self._chroma_strength = 6
+
+        # Player picking up power-ups
+        for pu in list(self.powerups):
+            if pu.rect.colliderect(player.rect):
+                msg = pu.apply(player, self.particles)
+                if msg == 'BOMB!':
+                    self._trigger_bomb()
+                else:
+                    self.ui.show_message(msg, player.x, player.y - 40,
+                                         pu.color, 'md')
+                    self.screen_flash((80, 200, 80), 40)
+                self.audio.play('powerup')
+                pu.kill()
+
+        # Player collecting coins
+        for coin in list(self.coins_group):
+            if coin.rect.colliderect(player.rect):
+                player.coins += coin.value
+                self.save.add_coins(coin.value)
+                self.audio.play('coin')
+                coin.kill()
+
+    def _handle_coin_magnet(self):
+        if not self.player.has_effect('coin_magnet'):
+            return
+        cx, cy  = self.player.x, self.player.y
+        magnet_r= 180
+        for obj in list(self.coins_group) + list(self.powerups):
+            dx = cx - obj.x
+            dy = cy - obj.y
+            if (dx*dx + dy*dy) < magnet_r*magnet_r:
+                obj.attract(cx, cy)
+
+    def _trigger_bomb(self):
+        for enemy in list(self.enemies):
+            self.particles.explosion(int(enemy.x), int(enemy.y), enemy.color, 20)
+            self._on_kill(enemy)
+            enemy.kill()
+        for boss in list(self.boss_group):
+            boss.take_damage(boss.max_health // 4)
+        for bullet in list(self.enemy_bullets):
+            bullet.kill()
+        self.particles.shake(18)
+        self.particles.shockwave_ring(SCREEN_WIDTH//2, SCREEN_HEIGHT//2,
+                                      (255, 80, 200), max_radius=300, speed=10)
+        self.screen_flash((255, 80, 200), 100)
+        self.audio.play('explosion')
+        self.ui.show_message('BOMB!', SCREEN_WIDTH//2, SCREEN_HEIGHT//2,
+                             (255,50,150), 'xl')
+
+    def _process_bomb_effect(self):
+        pass
+
+    # ── Achievements ──────────────────────────────────────────────────────────
+    def _check_achievements(self):
+        stats = self.save.get('stats', {})
+        stats['best_level'] = self.save.get('best_level', 0)
+        stats['total_coins'] = self.save.get('total_coins', 0)
+        stats['unlocked_weapons'] = self.save.get('unlocked_weapons', ['laser'])
+        conditions = {
+            'first_kill':    stats.get('kills', 0) >= 1,
+            'kills_100':     stats.get('kills', 0) >= 100,
+            'boss_slayer':   stats.get('bosses_killed', 0) >= 1,
+            'untouchable':   stats.get('perfect_levels', 0) >= 1,
+            'coin_collector':stats.get('total_coins', 0) >= 10000,
+            'weapon_master': len(stats.get('unlocked_weapons',[])) >= 7,
+            'earth_defender':stats.get('best_level', 0) >= TOTAL_LEVELS,
+        }
+        for aid, cond in conditions.items():
+            if cond:
+                if self.save.unlock_achievement(aid):
+                    self.ui.show_achievement(aid)
+
+    # ── Glow bloom pass ───────────────────────────────────────────────────────
+    def _draw_glow_pass(self, target: pygame.Surface):
+        """Additive-blend glow on bullets, thrusters, and boss."""
+        gs = self._glow_surf
+        gs.fill((0, 0, 0))
+
+        def _glow(cx, cy, radius, color, bright_factor=0.5):
+            r, g, b = (min(255, int(v * bright_factor)) for v in color)
+            pygame.draw.circle(gs, (r//3, g//3, b//3), (cx, cy), radius)
+            pygame.draw.circle(gs, (r, g, b),           (cx, cy), radius // 2)
+
+        # Player bullets
+        for b in self.player_bullets:
+            col = b.color or (0, 200, 255)
+            _glow(b.rect.centerx, b.rect.centery, 14, col, 0.8)
+
+        # Enemy bullets (red glow)
+        for b in self.enemy_bullets:
+            _glow(b.rect.centerx, b.rect.centery, 10, (255, 80, 40), 0.6)
+
+        # Boss — red pulse in rage mode, white otherwise
+        for boss in self.boss_group:
+            bx, by = int(boss.x), int(boss.y)
+            if getattr(boss, '_rage_mode', False):
+                t = math.sin(pygame.time.get_ticks() * 0.01) * 0.5 + 0.5
+                r = int(80 + t * 80)
+                pygame.draw.circle(gs, (r, 0, 0), (bx, by), 90)
+                pygame.draw.circle(gs, (r//2, 0, 0), (bx, by), 130)
+            else:
+                pygame.draw.circle(gs, (40, 0, 0), (bx, by), 70)
+
+        # Player thruster glow
+        if self.player:
+            px, py = int(self.player.x), int(self.player.y) + 28
+            pygame.draw.circle(gs, (20, 60, 200), (px, py), 24)
+            pygame.draw.circle(gs, (60, 140, 255), (px, py), 10)
+
+        target.blit(gs, (0, 0), special_flags=pygame.BLEND_ADD)
+
+    # ── Draw ──────────────────────────────────────────────────────────────────
+    def _draw(self):
+        ox, oy = self.particles.offset
+
+        if self._state == 'PLAYING' or self._state == 'PAUSED':
+            self._draw_game_world(ox, oy)
+        elif self._state == 'QUIZ':
+            self.quiz.draw(self.screen)
+        elif self._state == 'SHOP':
+            self._draw_game_world(0, 0)
+            self.shop.draw(self.screen)
+        elif self._state == 'MAIN_MENU':
+            self.background.draw(self.screen)
+            self.ui.draw_main_menu(self.screen)
+        elif self._state == 'GAME_OVER':
+            self._draw_game_world(ox, oy)
+            self.ui.draw_game_over(self.screen)
+        elif self._state == 'VICTORY':
+            self._draw_game_world(ox, oy)
+            self.ui.draw_victory(self.screen)
+        elif self._state == 'SETTINGS':
+            self.background.draw(self.screen)
+            self.ui.draw_settings(self.screen)
+        elif self._state == 'HIGH_SCORES':
+            self.background.draw(self.screen)
+            self.ui.draw_high_scores(self.screen)
+        elif self._state == 'HOW_TO_PLAY':
+            self.background.draw(self.screen)
+            self.ui.draw_how_to_play(self.screen)
+
+        if self._state == 'PAUSED':
+            self.ui.draw_pause(self.screen)
+
+        if self.save.get_setting('show_fps'):
+            fps = self._font_fps.render(f'FPS: {int(self.clock.get_fps())}', True, (0,255,0))
+            self.screen.blit(fps, (SCREEN_WIDTH - 80, SCREEN_HEIGHT - 22))
+
+        # On Android, scale the logical 1200x800 surface to the actual display
+        if self._display is not None:
+            pygame.transform.scale(self.screen, self._display.get_size(), self._display)
+            pygame.display.flip()
+        else:
+            pygame.display.flip()
+
+    def _draw_game_world(self, ox: int = 0, oy: int = 0):
+        self.background.draw(self.screen)
+
+        if ox or oy:
+            game_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            game_surf.blit(self.screen, (0, 0))
+            target = game_surf
+        else:
+            target = self.screen
+
+        # Power-ups
+        for pu in self.powerups:
+            target.blit(pu.image, (pu.rect.x + ox, pu.rect.y + oy))
+            pu.draw_label(target)
+
+        # Coins
+        for c in self.coins_group:
+            target.blit(c.image, (c.rect.x + ox, c.rect.y + oy))
+
+        # Enemy bullet trails + sprites
+        for b in self.enemy_bullets:
+            if hasattr(b, 'draw_trail'):
+                b.draw_trail(target)
+            target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
+
+        # Enemies + health bars
+        for e in self.enemies:
+            target.blit(e.image, (e.rect.x + ox, e.rect.y + oy))
+            e.draw_health_bar(target)
+
+        # Boss + shield + rage glow
+        for boss in self.boss_group:
+            boss.draw_shield(target)
+            target.blit(boss.image, (boss.rect.x + ox, boss.rect.y + oy))
+            boss.draw_hud(self.screen)
+            boss.draw_rage_aura(target)
+
+        # Player
+        if self.player:
+            self.player.draw(target)
+
+        # Player bullet trails + sprites
+        for b in self.player_bullets:
+            if hasattr(b, 'draw_trail'):
+                b.draw_trail(target)
+            target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
+
+        # Glow pass (additive)
+        self._draw_glow_pass(target)
+
+        # Particles + damage numbers
+        self.particles.draw(target)
+
+        # HUD (never shaken)
+        if self.player:
+            self.ui.draw_hud(self.screen)
+
+        # Combo display
+        if self._combo >= 3:
+            self._draw_combo(self.screen)
+
+        # On-screen touch / mouse controls
+        self._draw_onscreen_controls(self.screen)
+
+        # Wave progress
+        if self.level_manager:
+            self.level_manager.draw_intro(self.screen)
+
+        # Screen flash overlay
+        if self._flash_alpha > 0:
+            self._flash_surf.fill((*self._flash_color, self._flash_alpha))
+            self.screen.blit(self._flash_surf, (0, 0))
+
+        if ox or oy:
+            self.screen.blit(game_surf, (0, 0))
+
+        # Low-health vignette
+        self._draw_low_health_vignette(self.screen)
+
+        # Chromatic aberration on hit
+        if self._chroma_frames > 0:
+            self._chroma_frames -= 1
+            self._draw_chromatic_aberration(self.screen, self._chroma_strength)
+
+    def _draw_combo(self, surface: pygame.Surface):
+        """Draw a kinetic combo counter near the bottom center."""
+        font_big  = pygame.font.SysFont('consolas', 36, bold=True)
+        font_small= pygame.font.SysFont('consolas', 18)
+
+        # Pulsing scale
+        t     = pygame.time.get_ticks()
+        pulse = 1.0 + 0.06 * math.sin(t * 0.012)
+        mult_str = f'x{self._combo_mult:.1f}'
+        cnt_str  = f'{self._combo} KILLS'
+
+        # Colors ramp from yellow → orange → red → purple
+        if self._combo < 5:
+            col = (255, 220, 50)
+        elif self._combo < 10:
+            col = (255, 140, 20)
+        elif self._combo < 20:
+            col = (255, 50, 50)
+        else:
+            col = (200, 50, 255)
+
+        cx = SCREEN_WIDTH // 2
+        cy = SCREEN_HEIGHT - 110
+
+        # Multiplier text (big, pulsing)
+        mtxt = font_big.render(mult_str, True, col)
+        mw   = int(mtxt.get_width() * pulse)
+        mh   = int(mtxt.get_height() * pulse)
+        mtxt = pygame.transform.scale(mtxt, (mw, mh))
+        mtxt.set_alpha(220)
+        surface.blit(mtxt, mtxt.get_rect(center=(cx, cy)))
+
+        # Kill count (small, below)
+        ctxt = font_small.render(cnt_str, True, (200, 200, 200))
+        ctxt.set_alpha(180)
+        surface.blit(ctxt, ctxt.get_rect(center=(cx, cy + 28)))
+
+        # Decay bar — shows time until combo resets
+        bar_w = 120
+        bar_h = 4
+        ratio = self._combo_timer / 220
+        bar_x = cx - bar_w // 2
+        bar_y = cy + 44
+        pygame.draw.rect(surface, (60, 60, 60),  (bar_x, bar_y, bar_w, bar_h), border_radius=2)
+        pygame.draw.rect(surface, col,            (bar_x, bar_y, int(bar_w * ratio), bar_h), border_radius=2)
+
+    # ── On-screen touch / mouse control overlay ───────────────────────────────
+    def _draw_onscreen_controls(self, surface: pygame.Surface):
+        """Translucent HUD buttons visible at the bottom-right for mouse/touch play."""
+        t = pygame.time.get_ticks()
+
+        def _circle_btn(cx, cy, r, label, active, col):
+            alpha = 200 if active else 120
+            s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
+            pygame.draw.circle(s, (*col, alpha),        (r+2, r+2), r)
+            pygame.draw.circle(s, (255,255,255, alpha//2),(r+2, r+2), r, 2)
+            surface.blit(s, (cx - r - 2, cy - r - 2))
+            font = pygame.font.SysFont('consolas', 14, bold=True)
+            txt  = font.render(label, True, (255,255,255))
+            txt.set_alpha(alpha + 30)
+            surface.blit(txt, txt.get_rect(center=(cx, cy)))
+
+        def _rect_btn(rect, label, active, col):
+            alpha = 190 if active else 100
+            s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(s, (*col, alpha), s.get_rect(), border_radius=10)
+            pygame.draw.rect(s, (255,255,255,alpha//2), s.get_rect(), 1, border_radius=10)
+            surface.blit(s, rect.topleft)
+            font = pygame.font.SysFont('consolas', 13, bold=True)
+            txt  = font.render(label, True, (255,255,255))
+            txt.set_alpha(alpha + 40)
+            surface.blit(txt, txt.get_rect(center=rect.center))
+
+        fire_active = self._mouse_firing
+        _circle_btn(SCREEN_WIDTH - 70, SCREEN_HEIGHT - 105,
+                    45, 'FIRE', fire_active, (220, 40, 40))
+        _rect_btn(self._obtn_prev, '< WPN', False, (40, 80, 160))
+        _rect_btn(self._obtn_next, 'WPN >', False, (40, 80, 160))
+
+        # Show F11 hint the first ~8 seconds
+        if t < 8000:
+            hint = pygame.font.SysFont('consolas', 12)
+            h = hint.render('F11 = Fullscreen  |  Mouse = move & fire', True, (120,120,160))
+            h.set_alpha(max(0, int(255 * (1 - t/8000))))
+            surface.blit(h, h.get_rect(centerx=SCREEN_WIDTH//2, bottom=SCREEN_HEIGHT - 82))
+
+    # ── World-class screen effects ────────────────────────────────────────────
+    def _draw_low_health_vignette(self, surface: pygame.Surface):
+        """Red vignette that pulses around the screen edge when HP < 30 %."""
+        if not self.player:
+            return
+        ratio = self.player.health / max(self.player.max_health, 1)
+        if ratio >= 0.35:
+            return
+        t     = pygame.time.get_ticks()
+        pulse = 0.5 + 0.5 * math.sin(t * 0.006)
+        alpha = int((1 - ratio / 0.35) * 80 * pulse)
+        if alpha < 3:
+            return
+        vig  = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        # Draw four gradient strips (top, bottom, left, right)
+        depth = 160
+        for i in range(depth):
+            a = int(alpha * ((depth - i) / depth) ** 2)
+            col = (200, 0, 0, a)
+            pygame.draw.line(vig, col, (0, i), (SCREEN_WIDTH, i))
+            pygame.draw.line(vig, col, (0, SCREEN_HEIGHT - 1 - i), (SCREEN_WIDTH, SCREEN_HEIGHT - 1 - i))
+            pygame.draw.line(vig, col, (i, 0), (i, SCREEN_HEIGHT))
+            pygame.draw.line(vig, col, (SCREEN_WIDTH - 1 - i, 0), (SCREEN_WIDTH - 1 - i, SCREEN_HEIGHT))
+        surface.blit(vig, (0, 0))
+
+    def _draw_chromatic_aberration(self, surface: pygame.Surface, strength: int):
+        """Brief RGB-fringe effect for big impacts. No numpy required."""
+        if strength <= 0:
+            return
+        copy  = surface.copy()
+        # Red ghost shifted left
+        r_ghost = pygame.Surface(copy.get_size(), pygame.SRCALPHA)
+        r_ghost.blit(copy, (0, 0))
+        r_ghost.fill((255, 0, 0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        r_ghost.set_alpha(70)
+        surface.blit(r_ghost, (-strength, 0), special_flags=pygame.BLEND_ADD)
+        # Blue ghost shifted right
+        b_ghost = pygame.Surface(copy.get_size(), pygame.SRCALPHA)
+        b_ghost.blit(copy, (0, 0))
+        b_ghost.fill((0, 0, 255, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        b_ghost.set_alpha(70)
+        surface.blit(b_ghost, (strength, 0), special_flags=pygame.BLEND_ADD)
