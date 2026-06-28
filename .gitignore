@@ -5,7 +5,7 @@ bin/
 # PyInstaller output
 build/
 dist/
-*.spec
+alien_invasion.spec
 
 # Save file (personal progress)
 savegame.json
