@@ -11,8 +11,8 @@ version = 1.0
 # SDL2 bootstrap is required for pygame apps
 p4a.bootstrap = sdl2
 
-# No version pinning — let p4a use its bundled recipes
-requirements = python3,pygame
+# Python 3.10 required — pygame C extension breaks on 3.11+ (longintrepr.h removed)
+requirements = python3==3.10.14,pygame==2.1.2
 
 orientation = landscape
 

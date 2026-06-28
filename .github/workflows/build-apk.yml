@@ -51,12 +51,6 @@ jobs:
             -srcalias alieninvasion -destalias alieninvasion \
             -noprompt
 
-      - name: Accept Android SDK licenses
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-          yes | buildozer android release --accept-sdk-license 2>/dev/null || true
-
       - name: Build release APK
         run: yes | buildozer android release
 
