@@ -57,6 +57,18 @@ jobs:
       - name: Build APK
         run: yes | buildozer android release
 
+      - name: Sign AAB
+        run: |
+          AAB=$(ls bin/*.aab)
+          jarsigner -verbose \
+            -keystore release.jks \
+            -storepass 'AlienInvasion2024!' \
+            -keypass 'AlienInvasion2024!' \
+            -sigalg SHA256withRSA \
+            -digestalg SHA-256 \
+            "$AAB" alieninvasion
+          jarsigner -verify "$AAB" && echo "Signature OK"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
