@@ -61,6 +61,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AlienInvasion-release
-          path: bin/*.apk
+          path: bin/*.{apk,aab}
           if-no-files-found: error
           retention-days: 90
