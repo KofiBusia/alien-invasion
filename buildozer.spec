@@ -15,7 +15,7 @@ requirements = python3==3.10.14,hostpython3==3.10.14,pygame==2.1.2
 
 orientation = landscape
 
-android.api = 33
+android.api = 35
 android.minapi = 21
 android.accept_sdk_license = True
 android.build_tools_version = 34.0.0
