@@ -10,8 +10,8 @@ version = 1.0
 
 p4a.bootstrap = sdl2
 
-# Let p4a pick compatible python3 version automatically; only pin pygame
-requirements = python3,pygame
+# hostpython3 must match python3 exactly or p4a refuses to build
+requirements = python3==3.10.14,hostpython3==3.10.14,pygame==2.1.2
 
 orientation = landscape
 
