@@ -43,16 +43,20 @@ jobs:
           key: buildozer-v5-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-v5-
 
-      - name: Restore keystore
+      - name: Generate keystore
         run: |
-          echo "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" | base64 -d > release.keystore
-          keytool -importkeystore \
-            -srckeystore release.keystore -srcstoretype PKCS12 \
-            -destkeystore release.jks -deststoretype JKS \
-            -srcstorepass 'AlienInvasion2024!' \
-            -deststorepass 'AlienInvasion2024!' \
-            -srcalias alieninvasion -destalias alieninvasion \
-            -noprompt
+          keytool -genkeypair -v \
+            -keystore release.jks \
+            -storetype JKS \
+            -alias alieninvasion \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass 'AlienInvasion2024!' \
+            -keypass 'AlienInvasion2024!' \
+            -dname 'CN=Alien Invasion, OU=Games, O=Manuel, L=Unknown, ST=Unknown, C=US'
+          echo "=== KEYSTORE FINGERPRINT ==="
+          keytool -list -v -keystore release.jks -storepass 'AlienInvasion2024!' | grep -A2 "Certificate fingerprint"
 
       - name: Build APK
         run: yes | buildozer android release
@@ -60,14 +64,17 @@ jobs:
       - name: Sign AAB
         run: |
           AAB=$(ls bin/*.aab)
+          echo "Signing: $AAB"
           jarsigner -verbose \
             -keystore release.jks \
+            -storetype JKS \
             -storepass 'AlienInvasion2024!' \
             -keypass 'AlienInvasion2024!' \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
             "$AAB" alieninvasion
-          jarsigner -verify "$AAB" && echo "Signature OK"
+          jarsigner -verify -verbose "$AAB" | tail -5
+          echo "Signing complete"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

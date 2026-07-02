@@ -6,7 +6,7 @@ package.domain = org.manuel
 source.dir = .
 source.include_exts = py,json
 
-version = 1.0
+version = 1.1
 
 p4a.bootstrap = sdl2
 
@@ -26,10 +26,6 @@ android.archs = arm64-v8a
 
 fullscreen = 1
 
-android.keystore = release.jks
-android.keystore_password = AlienInvasion2024!
-android.keyalias = alieninvasion
-android.keyalias_password = AlienInvasion2024!
 
 [buildozer]
 log_level = 2
