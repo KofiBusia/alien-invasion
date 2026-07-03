@@ -102,22 +102,35 @@ class Game:
         self._fire_finger   = None
 
         # ── Virtual joystick (left thumb) ────────────────────────────────────
-        _JX, _JY          = 155, SCREEN_HEIGHT - 155
+        if IS_ANDROID:
+            _JX, _JY         = 190, SCREEN_HEIGHT - 190
+            self._joy_base_r = 150
+            self._joy_knob_r = 72
+        else:
+            _JX, _JY         = 155, SCREEN_HEIGHT - 155
+            self._joy_base_r = 115
+            self._joy_knob_r = 52
         self._joy_center  = (_JX, _JY)
-        self._joy_base_r  = 115
-        self._joy_knob_r  = 52
         self._joy_pos     = (_JX, _JY)
         self._joy_finger  = None
         self._joy_dx      = 0.0
         self._joy_dy      = 0.0
 
         # ── Fire button (large circle, bottom-right) ──────────────────────
-        self._fire_center = (SCREEN_WIDTH - 105, SCREEN_HEIGHT - 158)
-        self._fire_r      = 85
+        if IS_ANDROID:
+            self._fire_center = (SCREEN_WIDTH - 135, SCREEN_HEIGHT - 185)
+            self._fire_r      = 118
+        else:
+            self._fire_center = (SCREEN_WIDTH - 105, SCREEN_HEIGHT - 158)
+            self._fire_r      = 85
 
         # ── Weapon switch buttons (bottom, left of fire button) ───────────
-        self._obtn_prev = pygame.Rect(SCREEN_WIDTH - 355, SCREEN_HEIGHT - 75, 115, 62)
-        self._obtn_next = pygame.Rect(SCREEN_WIDTH - 230, SCREEN_HEIGHT - 75, 115, 62)
+        if IS_ANDROID:
+            self._obtn_prev = pygame.Rect(SCREEN_WIDTH - 460, SCREEN_HEIGHT - 90, 152, 80)
+            self._obtn_next = pygame.Rect(SCREEN_WIDTH - 303, SCREEN_HEIGHT - 90, 152, 80)
+        else:
+            self._obtn_prev = pygame.Rect(SCREEN_WIDTH - 355, SCREEN_HEIGHT - 75, 115, 62)
+            self._obtn_next = pygame.Rect(SCREEN_WIDTH - 230, SCREEN_HEIGHT - 75, 115, 62)
 
         # ── Pre-rendered control surfaces (built once, blitted each frame) ─
         self._ctrl_joy_base, self._ctrl_joy_knob_idle, self._ctrl_joy_knob_active, \
@@ -431,10 +444,10 @@ class Game:
                 self.audio.play('click')
             return
 
-        # Joystick zone: left 45% of screen or close to joystick center
+        # Joystick zone: left half of screen or close to joystick center
         jx, jy = self._joy_center
-        near_joy = math.hypot(x - jx, y - jy) < self._joy_base_r * 1.8
-        if (x < SCREEN_WIDTH * 0.45 or near_joy) and self._joy_finger is None:
+        near_joy = math.hypot(x - jx, y - jy) < self._joy_base_r * 2.2
+        if (x < SCREEN_WIDTH * 0.50 or near_joy) and self._joy_finger is None:
             self._joy_finger = fid
             self._update_joystick(x, y)
             return

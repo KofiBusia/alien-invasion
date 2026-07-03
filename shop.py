@@ -348,12 +348,17 @@ class Shop:
         else:
             bg = (16, 26, 50)
 
-        s = pygame.Surface(r.size, pygame.SRCALPHA)
-        s.fill((*bg, 218))
-        if item.hovered and item.can_afford:
-            sa = int(18 * math.sin(t * 0.13) + 18)
-            s.fill((255, 255, 255, sa), special_flags=pygame.BLEND_RGBA_ADD)
-        surface.blit(s, r.topleft)
+        # Draw item card background — solid rect avoids per-item SRCALPHA on Android
+        from settings import IS_ANDROID as _IS_AND
+        if _IS_AND:
+            pygame.draw.rect(surface, bg, r, border_radius=8)
+        else:
+            s = pygame.Surface(r.size, pygame.SRCALPHA)
+            s.fill((*bg, 218))
+            if item.hovered and item.can_afford:
+                sa = int(18 * math.sin(t * 0.13) + 18)
+                s.fill((255, 255, 255, sa), special_flags=pygame.BLEND_RGBA_ADD)
+            surface.blit(s, r.topleft)
 
         if item.is_trail and item.active:
             bc = (60, 240, 100)

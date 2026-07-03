@@ -165,7 +165,11 @@ class TrailSystem:
     def emit(self, engine_positions: list[tuple[float, float]], moving: bool):
         if self.trail_type is None:
             return
-        for ex, ey in engine_positions:
+        # On Android emit from one engine position only to halve particle count
+        import os
+        _android = bool(os.environ.get('ANDROID_ROOT'))
+        positions = engine_positions[:1] if _android else engine_positions
+        for ex, ey in positions:
             self._emit_at(ex, ey, moving)
 
     def update(self):
@@ -177,10 +181,14 @@ class TrailSystem:
         for p in self.particles:
             if p.a < 4:
                 continue
-            sz = max(1, p.size)
-            s  = pygame.Surface((sz * 2 + 2, sz * 2 + 2), pygame.SRCALPHA)
-            pygame.draw.circle(s, (p.r, p.g, p.b, p.a), (sz + 1, sz + 1), sz + 1)
-            surface.blit(s, (int(p.x) - sz - 1, int(p.y) - sz - 1))
+            sz   = max(1, p.size)
+            # Pre-multiply alpha into RGB — zero Surface allocations per frame.
+            # Looks identical on the dark space background.
+            frac = p.a / 255.0
+            col  = (int(p.r * frac), int(p.g * frac), int(p.b * frac))
+            if col[0] < 3 and col[1] < 3 and col[2] < 3:
+                continue
+            pygame.draw.circle(surface, col, (int(p.x), int(p.y)), sz + 1)
 
     def _emit_at(self, x: float, y: float, moving: bool):
         n   = lambda s: random.uniform(-s, s)

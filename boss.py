@@ -353,10 +353,11 @@ class Boss(pygame.sprite.Sprite):
         pygame.draw.rect(surface, col,
                          (bx, by, int(bw*ratio), bh), border_radius=4)
 
-        # Shine stripe
-        sh = pygame.Surface((int(bw*ratio), bh//3), pygame.SRCALPHA)
-        sh.fill((255,255,255,40))
-        surface.blit(sh, (bx, by))
+        # Shine stripe (desktop only — SRCALPHA allocation too costly on Android)
+        if not IS_ANDROID and int(bw * ratio) > 0:
+            sh = pygame.Surface((int(bw*ratio), bh//3), pygame.SRCALPHA)
+            sh.fill((255,255,255,40))
+            surface.blit(sh, (bx, by))
 
         # Phase markers at 33% and 66%
         for pct in (0.33, 0.66):

@@ -41,7 +41,7 @@ UI_SUCCESS     = ( 50, 200,  50)
 UI_DANGER      = (220,  50,  50)
 
 # ── Player ────────────────────────────────────────────────────────────────────
-PLAYER_SPEED            = 5.0
+PLAYER_SPEED            = 6.5 if IS_ANDROID else 5.0
 PLAYER_HEALTH           = 100
 PLAYER_SHIELD           = 50
 PLAYER_LIVES            = 3
@@ -402,7 +402,7 @@ ACHIEVEMENTS = {
 }
 
 # ── Visual FX ─────────────────────────────────────────────────────────────────
-MAX_PARTICLES       = 350 if IS_ANDROID else 1000
+MAX_PARTICLES       = 180 if IS_ANDROID else 1000
 EXPLOSION_PARTICLES = 38
 HIT_PARTICLES       = 8
 STAR_COUNT          = 160
