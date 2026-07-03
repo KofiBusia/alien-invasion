@@ -128,10 +128,8 @@ class Player(pygame.sprite.Sprite):
     # ── Engine flame (drawn separately each frame) ────────────────────────────
     def _draw_flame(self, surface: pygame.Surface):
         self._eng_tick += 1
-        thrust = (abs(self.vx) + abs(self.vy)) / (self.speed * 1.414)
-        thrust = max(0.3, thrust)
+        thrust = max(0.3, (abs(self.vx) + abs(self.vy)) / (self.speed * 1.414))
         W = 56
-        # Three nozzle positions in world space
         for i, ex in enumerate([W//4, W//2, W*3//4]):
             wx = int(self.x) - W//2 + ex
             wy = int(self.y) + 26
@@ -139,16 +137,13 @@ class Player(pygame.sprite.Sprite):
             fh = int((10 + flicker + (i==1)*6) * thrust)
             for j in range(fh):
                 ratio = j / max(fh, 1)
-                alpha = int(220 * (1 - ratio))
                 if ratio < 0.3:
-                    c = (100, 180, 255, alpha)
+                    c = (100, 180, 255)
                 elif ratio < 0.6:
-                    c = (255, 200, 60, alpha)
+                    c = (255, 200, 60)
                 else:
-                    c = (255, 80, 20, alpha)
-                dot = pygame.Surface((3, 3), pygame.SRCALPHA)
-                dot.fill(c)
-                surface.blit(dot, (wx - 1, wy + j))
+                    c = (255, 80, 20)
+                pygame.draw.circle(surface, c, (wx, wy + j), 1)
 
     # ── Input ─────────────────────────────────────────────────────────────────
     def handle_input(self):
@@ -196,13 +191,23 @@ class Player(pygame.sprite.Sprite):
 
         self.handle_input()
 
-        # Mouse/touch override — only when no keyboard direction is pressed
-        mt = getattr(self.game, '_mouse_target', None)
-        if mt is not None and self.vx == 0 and self.vy == 0:
-            fire = getattr(self.game, '_mouse_firing', False)
-            self.handle_mouse_target(mt[0], mt[1], fire)
-        elif getattr(self.game, '_mouse_firing', False) and mt is None:
-            self.shoot()
+        # Virtual joystick (Android) — overrides keyboard when active
+        jdx = getattr(self.game, '_joy_dx', 0.0)
+        jdy = getattr(self.game, '_joy_dy', 0.0)
+        if jdx or jdy:
+            spd = self.speed * (1.55 if self.has_effect('speed_boost') else 1.0)
+            self.vx = jdx * spd
+            self.vy = jdy * spd
+            if getattr(self.game, '_mouse_firing', False):
+                self.shoot()
+        else:
+            # Mouse/touch — only when no keyboard direction pressed
+            mt = getattr(self.game, '_mouse_target', None)
+            if mt is not None and self.vx == 0 and self.vy == 0:
+                fire = getattr(self.game, '_mouse_firing', False)
+                self.handle_mouse_target(mt[0], mt[1], fire)
+            elif getattr(self.game, '_mouse_firing', False) and mt is None:
+                self.shoot()
 
         # Move + clamp
         self.x += self.vx

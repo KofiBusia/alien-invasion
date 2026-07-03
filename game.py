@@ -85,16 +85,36 @@ class Game:
         self._fullscreen = False
 
         # ── Mouse / touch input ───────────────────────────────────────────────
-        self._mouse_target  = None   # (x, y) when mouse/touch active
+        self._mouse_target  = None
         self._mouse_firing  = False
-        self._touch_fingers: dict = {}   # finger_id -> (x, y)
-        self._fire_finger   = None       # finger id controlling fire
-        self._move_finger   = None       # finger id controlling movement
+        self._touch_fingers: dict = {}
+        self._fire_finger   = None
 
-        # On-screen button rects (drawn in playing state for touch)
-        self._obtn_fire = pygame.Rect(SCREEN_WIDTH-120, SCREEN_HEIGHT-155, 100, 100)
-        self._obtn_prev = pygame.Rect(SCREEN_WIDTH-230, SCREEN_HEIGHT-75,  90,  55)
-        self._obtn_next = pygame.Rect(SCREEN_WIDTH-130, SCREEN_HEIGHT-75,  90,  55)
+        # ── Virtual joystick (left thumb) ────────────────────────────────────
+        _JX, _JY          = 155, SCREEN_HEIGHT - 155
+        self._joy_center  = (_JX, _JY)
+        self._joy_base_r  = 115
+        self._joy_knob_r  = 52
+        self._joy_pos     = (_JX, _JY)
+        self._joy_finger  = None
+        self._joy_dx      = 0.0
+        self._joy_dy      = 0.0
+
+        # ── Fire button (large circle, bottom-right) ──────────────────────
+        self._fire_center = (SCREEN_WIDTH - 105, SCREEN_HEIGHT - 158)
+        self._fire_r      = 85
+
+        # ── Weapon switch buttons (bottom, left of fire button) ───────────
+        self._obtn_prev = pygame.Rect(SCREEN_WIDTH - 355, SCREEN_HEIGHT - 75, 115, 62)
+        self._obtn_next = pygame.Rect(SCREEN_WIDTH - 230, SCREEN_HEIGHT - 75, 115, 62)
+
+        # ── Pre-rendered control surfaces (built once, blitted each frame) ─
+        self._ctrl_joy_base, self._ctrl_joy_knob_idle, self._ctrl_joy_knob_active, \
+            self._ctrl_fire_idle, self._ctrl_fire_active, \
+            self._ctrl_prev_surf, self._ctrl_next_surf = self._build_ctrl_surfs()
+
+        # ── Pre-rendered low-health vignette ──────────────────────────────
+        self._vignette_surf = self._build_vignette_surf()
 
         # ── Combat juice ──────────────────────────────────────────────────────
         # Combo system
@@ -299,9 +319,7 @@ class Game:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mx, my = event.pos
-                if self._obtn_fire.collidepoint(mx, my):
-                    self._mouse_firing = True
-                elif self._obtn_prev.collidepoint(mx, my):
+                if self._obtn_prev.collidepoint(mx, my):
                     self.player.switch_weapon(-1)
                     self.audio.play('click')
                 elif self._obtn_next.collidepoint(mx, my):
@@ -309,7 +327,7 @@ class Game:
                     self.audio.play('click')
                 else:
                     self._mouse_firing = True
-            elif event.button == 3:   # right click → switch weapon
+            elif event.button == 3:
                 self.player.switch_weapon(1)
                 self.audio.play('click')
 
@@ -332,30 +350,62 @@ class Game:
         flags = pygame.FULLSCREEN if self._fullscreen else 0
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
 
+    def _update_joystick(self, x, y):
+        jx, jy = self._joy_center
+        dx = x - jx
+        dy = y - jy
+        dist = math.hypot(dx, dy)
+        if dist > self._joy_base_r:
+            dx = dx / dist * self._joy_base_r
+            dy = dy / dist * self._joy_base_r
+        self._joy_pos = (jx + dx, jy + dy)
+        self._joy_dx  = dx / self._joy_base_r
+        self._joy_dy  = dy / self._joy_base_r
+
     def _on_finger_down(self, fid, fx, fy):
         x, y = fx * SCREEN_WIDTH, fy * SCREEN_HEIGHT
         self._touch_fingers[fid] = (x, y)
-        # Right half of screen = fire
-        if x > SCREEN_WIDTH * 0.6:
-            self._fire_finger   = fid
-            self._mouse_firing  = True
-        else:
-            self._move_finger   = fid
-            self._mouse_target  = (x, y)
+
+        # Weapon buttons take priority
+        if self._obtn_prev.collidepoint(x, y):
+            if self.player:
+                self.player.switch_weapon(-1)
+                self.audio.play('click')
+            return
+        if self._obtn_next.collidepoint(x, y):
+            if self.player:
+                self.player.switch_weapon(1)
+                self.audio.play('click')
+            return
+
+        # Joystick zone: left 45% of screen or close to joystick center
+        jx, jy = self._joy_center
+        near_joy = math.hypot(x - jx, y - jy) < self._joy_base_r * 1.8
+        if (x < SCREEN_WIDTH * 0.45 or near_joy) and self._joy_finger is None:
+            self._joy_finger = fid
+            self._update_joystick(x, y)
+            return
+
+        # Fire zone: right side
+        self._fire_finger  = fid
+        self._mouse_firing = True
 
     def _on_finger_motion(self, fid, fx, fy):
         x, y = fx * SCREEN_WIDTH, fy * SCREEN_HEIGHT
         self._touch_fingers[fid] = (x, y)
-        if fid == self._move_finger:
-            self._mouse_target = (x, y)
+        if fid == self._joy_finger:
+            self._update_joystick(x, y)
 
     def _on_finger_up(self, fid):
         self._touch_fingers.pop(fid, None)
+        if fid == self._joy_finger:
+            self._joy_finger = None
+            self._joy_pos    = self._joy_center
+            self._joy_dx     = 0.0
+            self._joy_dy     = 0.0
         if fid == self._fire_finger:
             self._fire_finger  = None
             self._mouse_firing = False
-        if fid == self._move_finger:
-            self._move_finger  = None
 
     def _handle_pause_event(self, event):
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_p):
@@ -852,49 +902,116 @@ class Game:
         pygame.draw.rect(surface, (60, 60, 60),  (bar_x, bar_y, bar_w, bar_h), border_radius=2)
         pygame.draw.rect(surface, col,            (bar_x, bar_y, int(bar_w * ratio), bar_h), border_radius=2)
 
+    # ── Pre-render control surfaces (called once in __init__) ─────────────────
+    def _build_ctrl_surfs(self):
+        br = self._joy_base_r
+        kr = self._joy_knob_r
+        fr = self._fire_r
+
+        # Joystick base ring
+        joy_base = pygame.Surface((br*2+4, br*2+4), pygame.SRCALPHA)
+        pygame.draw.circle(joy_base, (60, 120, 200, 45),  (br+2, br+2), br)
+        pygame.draw.circle(joy_base, (80, 160, 255, 130), (br+2, br+2), br, 4)
+        pygame.draw.circle(joy_base, (80, 160, 255, 50),  (br+2, br+2), br - 20, 2)
+
+        # Joystick knob (idle)
+        joy_knob_idle = pygame.Surface((kr*2+4, kr*2+4), pygame.SRCALPHA)
+        pygame.draw.circle(joy_knob_idle, (80, 140, 220, 160), (kr+2, kr+2), kr)
+        pygame.draw.circle(joy_knob_idle, (160, 210, 255, 200), (kr+2, kr+2), kr, 3)
+
+        # Joystick knob (active)
+        joy_knob_act = pygame.Surface((kr*2+4, kr*2+4), pygame.SRCALPHA)
+        pygame.draw.circle(joy_knob_act, (120, 190, 255, 220), (kr+2, kr+2), kr)
+        pygame.draw.circle(joy_knob_act, (220, 240, 255, 255), (kr+2, kr+2), kr, 3)
+        pygame.draw.circle(joy_knob_act, (180, 230, 255, 100), (kr+2, kr+2), kr//2)
+
+        # Fire button idle
+        fire_idle = pygame.Surface((fr*2+4, fr*2+4), pygame.SRCALPHA)
+        pygame.draw.circle(fire_idle, (180, 30, 30, 130), (fr+2, fr+2), fr)
+        pygame.draw.circle(fire_idle, (255, 80, 80, 180),  (fr+2, fr+2), fr, 4)
+        fnt = pygame.font.SysFont('consolas', 24, bold=True)
+        t = fnt.render('FIRE', True, (255, 200, 200))
+        t.set_alpha(180)
+        fire_idle.blit(t, t.get_rect(center=(fr+2, fr+2)))
+
+        # Fire button active
+        fire_act = pygame.Surface((fr*2+4, fr*2+4), pygame.SRCALPHA)
+        pygame.draw.circle(fire_act, (255, 50, 50, 210), (fr+2, fr+2), fr)
+        pygame.draw.circle(fire_act, (255, 140, 60, 255), (fr+2, fr+2), fr, 5)
+        pygame.draw.circle(fire_act, (255, 100, 50, 80),  (fr+2, fr+2), fr//2)
+        t = fnt.render('FIRE', True, (255, 255, 255))
+        t.set_alpha(255)
+        fire_act.blit(t, t.get_rect(center=(fr+2, fr+2)))
+
+        # Weapon buttons
+        def _wpn_surf(label):
+            r = self._obtn_prev
+            s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
+            pygame.draw.rect(s, (30, 70, 160, 140), s.get_rect(), border_radius=14)
+            pygame.draw.rect(s, (80, 140, 255, 180), s.get_rect(), 2, border_radius=14)
+            wf = pygame.font.SysFont('consolas', 16, bold=True)
+            wt = wf.render(label, True, (200, 220, 255))
+            wt.set_alpha(200)
+            s.blit(wt, wt.get_rect(center=(r.width//2, r.height//2)))
+            return s
+        prev_s = _wpn_surf('< WPN')
+        next_s = _wpn_surf('WPN >')
+
+        return joy_base, joy_knob_idle, joy_knob_act, fire_idle, fire_act, prev_s, next_s
+
+    def _build_vignette_surf(self):
+        s = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        depth = 100
+        for i in range(depth):
+            a = int(255 * ((depth - i) / depth) ** 2)
+            col = (200, 0, 0, a)
+            pygame.draw.line(s, col, (0, i), (SCREEN_WIDTH, i))
+            pygame.draw.line(s, col, (0, SCREEN_HEIGHT-1-i), (SCREEN_WIDTH, SCREEN_HEIGHT-1-i))
+            pygame.draw.line(s, col, (i, 0), (i, SCREEN_HEIGHT))
+            pygame.draw.line(s, col, (SCREEN_WIDTH-1-i, 0), (SCREEN_WIDTH-1-i, SCREEN_HEIGHT))
+        return s
+
     # ── On-screen touch / mouse control overlay ───────────────────────────────
     def _draw_onscreen_controls(self, surface: pygame.Surface):
-        """Translucent HUD buttons visible at the bottom-right for mouse/touch play."""
-        t = pygame.time.get_ticks()
+        joy_base, joy_knob_idle, joy_knob_act, fire_idle, fire_act, prev_s, next_s \
+            = self._ctrl_joy_base, self._ctrl_joy_knob_idle, self._ctrl_joy_knob_active, \
+              self._ctrl_fire_idle, self._ctrl_fire_active, \
+              self._ctrl_prev_surf, self._ctrl_next_surf
 
-        def _circle_btn(cx, cy, r, label, active, col):
-            alpha = 200 if active else 120
-            s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*col, alpha),        (r+2, r+2), r)
-            pygame.draw.circle(s, (255,255,255, alpha//2),(r+2, r+2), r, 2)
-            surface.blit(s, (cx - r - 2, cy - r - 2))
-            font = pygame.font.SysFont('consolas', 14, bold=True)
-            txt  = font.render(label, True, (255,255,255))
-            txt.set_alpha(alpha + 30)
-            surface.blit(txt, txt.get_rect(center=(cx, cy)))
+        # Joystick base
+        jx, jy = self._joy_center
+        br = self._joy_base_r
+        surface.blit(joy_base, (jx - br - 2, jy - br - 2))
 
-        def _rect_btn(rect, label, active, col):
-            alpha = 190 if active else 100
-            s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(s, (*col, alpha), s.get_rect(), border_radius=10)
-            pygame.draw.rect(s, (255,255,255,alpha//2), s.get_rect(), 1, border_radius=10)
-            surface.blit(s, rect.topleft)
-            font = pygame.font.SysFont('consolas', 13, bold=True)
-            txt  = font.render(label, True, (255,255,255))
-            txt.set_alpha(alpha + 40)
-            surface.blit(txt, txt.get_rect(center=rect.center))
+        # Direction line when active
+        kx, ky = self._joy_pos
+        if self._joy_finger is not None and (kx != jx or ky != jy):
+            pygame.draw.line(surface, (100, 180, 255, 0), (jx, jy), (int(kx), int(ky)), 3)
 
-        fire_active = self._mouse_firing
-        _circle_btn(SCREEN_WIDTH - 70, SCREEN_HEIGHT - 105,
-                    45, 'FIRE', fire_active, (220, 40, 40))
-        _rect_btn(self._obtn_prev, '< WPN', False, (40, 80, 160))
-        _rect_btn(self._obtn_next, 'WPN >', False, (40, 80, 160))
+        # Joystick knob
+        kr = self._joy_knob_r
+        knob = joy_knob_act if self._joy_finger is not None else joy_knob_idle
+        surface.blit(knob, (int(kx) - kr - 2, int(ky) - kr - 2))
 
-        # Show F11 hint the first ~8 seconds
-        if t < 8000:
+        # Fire button
+        fr = self._fire_r
+        fcx, fcy = self._fire_center
+        fbtn = fire_act if self._mouse_firing else fire_idle
+        surface.blit(fbtn, (fcx - fr - 2, fcy - fr - 2))
+
+        # Weapon buttons
+        surface.blit(prev_s, self._obtn_prev.topleft)
+        surface.blit(next_s, self._obtn_next.topleft)
+
+        # Desktop hint (first 8 s only)
+        if not IS_ANDROID and pygame.time.get_ticks() < 8000:
             hint = pygame.font.SysFont('consolas', 12)
             h = hint.render('F11 = Fullscreen  |  Mouse = move & fire', True, (120,120,160))
-            h.set_alpha(max(0, int(255 * (1 - t/8000))))
+            h.set_alpha(max(0, int(255 * (1 - pygame.time.get_ticks()/8000))))
             surface.blit(h, h.get_rect(centerx=SCREEN_WIDTH//2, bottom=SCREEN_HEIGHT - 82))
 
     # ── World-class screen effects ────────────────────────────────────────────
     def _draw_low_health_vignette(self, surface: pygame.Surface):
-        """Red vignette that pulses around the screen edge when HP < 30 %."""
         if not self.player:
             return
         ratio = self.player.health / max(self.player.max_health, 1)
@@ -905,21 +1022,11 @@ class Game:
         alpha = int((1 - ratio / 0.35) * 80 * pulse)
         if alpha < 3:
             return
-        vig  = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        # Draw four gradient strips (top, bottom, left, right)
-        depth = 160
-        for i in range(depth):
-            a = int(alpha * ((depth - i) / depth) ** 2)
-            col = (200, 0, 0, a)
-            pygame.draw.line(vig, col, (0, i), (SCREEN_WIDTH, i))
-            pygame.draw.line(vig, col, (0, SCREEN_HEIGHT - 1 - i), (SCREEN_WIDTH, SCREEN_HEIGHT - 1 - i))
-            pygame.draw.line(vig, col, (i, 0), (i, SCREEN_HEIGHT))
-            pygame.draw.line(vig, col, (SCREEN_WIDTH - 1 - i, 0), (SCREEN_WIDTH - 1 - i, SCREEN_HEIGHT))
-        surface.blit(vig, (0, 0))
+        self._vignette_surf.set_alpha(alpha)
+        surface.blit(self._vignette_surf, (0, 0))
 
     def _draw_chromatic_aberration(self, surface: pygame.Surface, strength: int):
-        """Brief RGB-fringe effect for big impacts. No numpy required."""
-        if strength <= 0:
+        if IS_ANDROID or strength <= 0:
             return
         copy  = surface.copy()
         # Red ghost shifted left
