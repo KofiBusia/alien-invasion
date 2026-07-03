@@ -38,6 +38,13 @@ class Player(pygame.sprite.Sprite):
         # ── Active timed effects (name -> expiry ms) ──────────────────────────
         self._effects: dict[str, int] = {}
 
+        # ── Mid-run perks ────────────────────────────────────────────────────
+        self.perk_twin_cannon  = 0      # extra bullets per shot
+        self.perk_chain_blast  = False  # chain-explode on kill
+        self.perk_magnet       = False  # auto-collect coins
+        self.perk_phoenix_ready= True   # can auto-revive once
+        self.perk_piercing     = False  # all bullets pierce
+
         # ── Invincibility / blink ─────────────────────────────────────────────
         self._inv_until  = 0              # absolute ms timestamp
         self._blink_tick = 0
@@ -88,6 +95,35 @@ class Player(pygame.sprite.Sprite):
         self._apply_upgrades()
         self.health = min(self.health, self.max_health)
         self.shield = min(self.shield, self.max_shield)
+
+    def apply_perk(self, perk_id: str):
+        if perk_id == 'rapid_core':
+            self.cd_mult = max(0.20, self.cd_mult * 0.72)
+        elif perk_id == 'twin_cannon':
+            self.perk_twin_cannon += 1
+        elif perk_id == 'void_shield':
+            self.max_shield       += 60
+            self.shield            = min(self.max_shield, self.shield + 60)
+            self.shield_regen_sec += 2
+        elif perk_id == 'overdrive':
+            self.speed = min(self.speed * 1.4, 18.0)
+        elif perk_id == 'life_surge':
+            self.health = min(self.max_health, self.health + 50)
+        elif perk_id == 'chain_blast':
+            self.perk_chain_blast = True
+        elif perk_id == 'armor_plate':
+            self.armor_pct = max(0.15, self.armor_pct * 0.75)
+        elif perk_id == 'phoenix_core':
+            self.perk_phoenix_ready = True
+        elif perk_id == 'void_lance':
+            self.perk_piercing = True
+        elif perk_id == 'coin_magnet':
+            self.perk_magnet = True
+        elif perk_id == 'vital_core':
+            self.max_health += 60
+            self.health      = min(self.max_health, self.health + 60)
+        elif perk_id == 'lucky_shot':
+            self.crit_chance = min(0.90, self.crit_chance + 0.30)
 
     # ── Ship image ────────────────────────────────────────────────────────────
     def _build_ship(self) -> pygame.Surface:
@@ -287,6 +323,8 @@ class Player(pygame.sprite.Sprite):
         cx, cy  = self.x, self.y - self.rect.height // 2 + 4
 
         def add(b):
+            if self.perk_piercing and hasattr(b, 'piercing'):
+                b.piercing = True
             bullets.add(b)
             self.game.all_sprites.add(b)
 
@@ -325,6 +363,12 @@ class Player(pygame.sprite.Sprite):
         else:
             add(Bullet(cx, cy, 0, -spd, damage, color, size))
 
+        # Twin cannon perk — extra side bullets
+        for i in range(self.perk_twin_cannon):
+            spread = 18 + i * 12
+            add(Bullet(cx - spread, cy, -0.15 * (i + 1), -spd, damage, color, size))
+            add(Bullet(cx + spread, cy,  0.15 * (i + 1), -spd, damage, color, size))
+
     # ── Damage / healing ─────────────────────────────────────────────────────
     def take_damage(self, amount: int):
         now = pygame.time.get_ticks()
@@ -352,6 +396,18 @@ class Player(pygame.sprite.Sprite):
         self.health = min(self.max_health, self.health + amount)
 
     def _die(self):
+        # Phoenix Core perk: auto-revive once before losing a life
+        if self.perk_phoenix_ready and self.lives <= PLAYER_LIVES:
+            self.perk_phoenix_ready = False
+            self.health  = self.max_health // 2
+            self.shield  = 0
+            self._inv_until = pygame.time.get_ticks() + 3000
+            self.game.particles.explosion(self.x, self.y, (255, 120, 0), count=30, speed=7)
+            self.game.screen_flash((255, 100, 0), 70)
+            self.game.ui.show_message('PHOENIX REVIVE!', self.x, self.y - 60,
+                                      (255, 150, 0), 'md')
+            return
+
         self.lives -= 1
         self.game.particles.explosion(self.x, self.y, (100, 180, 255), count=45, speed=9)
         self.game.particles.shake(20)

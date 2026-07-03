@@ -21,13 +21,15 @@ from ui             import UIManager
 from quiz           import QuizManager
 from ally           import Ally, AllyBullet, ALLY_CONFIGS, ALLY_ORDER
 from ultimate_boss  import UltimateBoss
+from perk           import PerkScreen, pick_3_perks
+from asteroid       import Asteroid, AsteroidField
 
 
 STATES = frozenset([
     'MAIN_MENU', 'PLAYING', 'PAUSED', 'SHOP',
     'GAME_OVER', 'VICTORY', 'QUIZ',
     'SETTINGS', 'HIGH_SCORES', 'HOW_TO_PLAY',
-    'ULTIMATE_BOSS',
+    'ULTIMATE_BOSS', 'PERK_SELECT',
 ])
 
 _BACK = {
@@ -71,6 +73,15 @@ class Game:
         # Ultimate boss state
         self._ub_spawned        = False
         self._ub_complete_timer = 0
+
+        # Asteroid hazard
+        self.asteroids       = pygame.sprite.Group()
+        self._asteroid_field = AsteroidField(self)
+
+        # Mid-run perk system
+        self._perk_screen  = PerkScreen()
+        self._run_kills    = 0
+        self._next_perk_at = 15
 
         self.player        = None
         self.level_manager = None
@@ -207,10 +218,14 @@ class Game:
         self.level_manager = LevelManager(self)
         self.level_manager.start_level(level)
 
-        # Reset combo on new game
+        # Reset combo and perk/asteroid state on new game
         self._combo       = 0
         self._combo_mult  = 1.0
         self._combo_timer = 0
+        self._run_kills   = 0
+        self._next_perk_at= 15
+        self.asteroids.empty()
+        self._asteroid_field.reset()
 
         self.ui.ensure_secondary_menus()
         self.change_state('PLAYING')
@@ -269,6 +284,7 @@ class Game:
         self.coins_group.empty()
         self.allies.empty()
         self.ally_bullets.empty()
+        self.asteroids.empty()
 
     def _clear_enemies_and_bullets(self):
         for grp in (self.enemies, self.boss_group, self.player_bullets,
@@ -307,6 +323,20 @@ class Game:
 
             if self._state == 'MAIN_MENU':
                 self._handle_main_menu_event(event)
+            elif self._state == 'PERK_SELECT':
+                idx = self._perk_screen.handle_event(event)
+                if idx >= 0:
+                    perks = self._perk_screen._perks
+                    if idx < len(perks) and self.player:
+                        chosen = perks[idx]
+                        self.player.apply_perk(chosen['id'])
+                        self.ui.show_message(
+                            chosen['name'] + '!',
+                            SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30,
+                            chosen['color'], 'lg')
+                        self.screen_flash(chosen['color'], 50)
+                    prev = self._prev_state if self._prev_state in ('PLAYING', 'ULTIMATE_BOSS') else 'PLAYING'
+                    self.change_state(prev)
             elif self._state in ('PLAYING', 'ULTIMATE_BOSS'):
                 self._handle_playing_event(event)
             elif self._state == 'PAUSED':
@@ -336,7 +366,7 @@ class Game:
     def _handle_main_menu_event(self, event):
         label = self.ui.handle_main_menu(event)
         if label == 'NEW GAME':
-            self.save.set('current_coins', 0)
+            self.save.reset_run()
             self.start_new_game(1)
         elif label == 'CONTINUE':
             bl  = self.save.get('best_level', 0)
@@ -531,6 +561,8 @@ class Game:
             self._update_playing()
         elif self._state == 'ULTIMATE_BOSS':
             self._update_ultimate_boss()
+        elif self._state == 'PERK_SELECT':
+            pass  # game frozen during perk selection
         elif self._state == 'QUIZ':
             self.quiz.update()
             if self.quiz.done:
@@ -550,6 +582,8 @@ class Game:
         self.level_manager.update()
         self._handle_collisions()
         self._handle_coin_magnet()
+        self._handle_asteroids()
+        self._handle_perk_magnet()
         self._process_bomb_effect()
         self._check_achievements()
 
@@ -616,6 +650,33 @@ class Game:
             self.particles.stars_burst(
                 int(enemy.x if hasattr(enemy,'x') else SCREEN_WIDTH//2),
                 int(enemy.y if hasattr(enemy,'y') else SCREEN_HEIGHT//2), 30)
+
+        # Chain blast perk
+        if self.player and self.player.perk_chain_blast and random.random() < 0.35:
+            ex = getattr(enemy, 'x', SCREEN_WIDTH // 2)
+            ey = getattr(enemy, 'y', SCREEN_HEIGHT // 2)
+            self._area_damage(ex, ey, 80, 18, source='chain')
+
+        # Mid-run perk milestone
+        self._run_kills += 1
+        if self._run_kills >= self._next_perk_at and self._state in ('PLAYING', 'ULTIMATE_BOSS'):
+            self._next_perk_at += 15
+            self._perk_screen.show(pick_3_perks())
+            self.change_state('PERK_SELECT')
+
+    def _area_damage(self, cx, cy, radius, dmg, source='explosion'):
+        self.particles.explosion(int(cx), int(cy), (255, 160, 40), count=18, speed=5)
+        self.particles.shake(6)
+        for enemy in list(self.enemies):
+            dist = math.hypot(enemy.x - cx, enemy.y - cy)
+            if dist < radius:
+                killed = enemy.take_damage(dmg)
+                if killed:
+                    self._on_kill(enemy)
+        if self.player:
+            dist = math.hypot(self.player.x - cx, self.player.y - cy)
+            if dist < radius * 0.5 and source != 'chain':
+                self.player.take_damage(dmg // 3)
 
     def screen_flash(self, color=(255,0,0), alpha=90):
         """Trigger a full-screen color flash (damage, boss, etc.)."""
@@ -874,6 +935,75 @@ class Game:
                         self._on_kill(enemy)
                         self.ui._kill_flash = 22
 
+    def _handle_perk_magnet(self):
+        """Pull all coins toward player if perk_magnet perk is active."""
+        if not self.player or not self.player.perk_magnet:
+            return
+        px, py = self.player.x, self.player.y
+        for coin in self.coins_group:
+            dx = px - coin.rect.centerx
+            dy = py - coin.rect.centery
+            dist = math.hypot(dx, dy) or 1
+            spd  = min(8.0, 320.0 / dist)
+            coin.rect.x += int(dx / dist * spd)
+            coin.rect.y += int(dy / dist * spd)
+
+    def _handle_asteroids(self):
+        """Spawn, update, and resolve asteroid collisions."""
+        self._asteroid_field.update(self.asteroids)
+        for ast in list(self.asteroids):
+            ast.update()
+            if ast.offscreen:
+                ast.kill()
+                continue
+
+            # Player bullet hits asteroid
+            hits = pygame.sprite.spritecollide(ast, self.player_bullets, False,
+                                               pygame.sprite.collide_circle_ratio(0.85))
+            for bullet in hits:
+                if not getattr(bullet, 'piercing', False):
+                    bullet.kill()
+                if ast.take_damage(bullet.damage // 10 + 1):
+                    self._explode_asteroid(ast)
+                    break
+
+            # Asteroid hits player
+            if self.player and pygame.sprite.collide_circle_ratio(0.75)(ast, self.player):
+                self.player.take_damage(ast.dmg)
+                self._explode_asteroid(ast)
+
+            # Asteroid hits enemies
+            for enemy in list(self.enemies):
+                if pygame.sprite.collide_circle_ratio(0.7)(ast, enemy):
+                    enemy.take_damage(ast.dmg)
+                    ast.hp -= 1
+                    if ast.hp <= 0:
+                        self._explode_asteroid(ast)
+                        break
+
+    def _explode_asteroid(self, ast: 'Asteroid'):
+        if not ast.alive():
+            return
+        self.particles.explosion(int(ast.x), int(ast.y), (180, 160, 120),
+                                 count=20 + ast.r // 4, speed=4)
+        self.particles.shake(5)
+        # Coins
+        from powerup import Coin
+        n_coins = ast.coin_drop()
+        for _ in range(n_coins):
+            cx = ast.x + random.uniform(-25, 25)
+            cy = ast.y + random.uniform(-25, 25)
+            c  = Coin(self, cx, cy)
+            self.coins_group.add(c)
+            self.all_sprites.add(c)
+        # Score
+        if self.player:
+            self.player.score += ast.score_val
+        # Fragment split
+        for frag in ast.split():
+            self.asteroids.add(frag)
+        ast.kill()
+
     def _process_bomb_effect(self):
         pass
 
@@ -959,7 +1089,7 @@ class Game:
     def _draw(self):
         ox, oy = self.particles.offset
 
-        if self._state in ('PLAYING', 'PAUSED', 'ULTIMATE_BOSS'):
+        if self._state in ('PLAYING', 'PAUSED', 'ULTIMATE_BOSS', 'PERK_SELECT'):
             self._draw_game_world(ox, oy)
         elif self._state == 'QUIZ':
             self.quiz.draw(self.screen)
@@ -988,6 +1118,9 @@ class Game:
         if self._state == 'PAUSED':
             self.ui.draw_pause(self.screen)
 
+        if self._state == 'PERK_SELECT':
+            self._perk_screen.draw(self.screen)
+
         if self.save.get_setting('show_fps'):
             fps = self._font_fps.render(f'FPS: {int(self.clock.get_fps())}', True, (0,255,0))
             self.screen.blit(fps, (SCREEN_WIDTH - 80, SCREEN_HEIGHT - 22))
@@ -1008,6 +1141,10 @@ class Game:
             target = game_surf
         else:
             target = self.screen
+
+        # Asteroids (before enemies so they appear behind bullets)
+        for ast in self.asteroids:
+            target.blit(ast.image, (ast.rect.x + ox, ast.rect.y + oy))
 
         # Power-ups
         for pu in self.powerups:

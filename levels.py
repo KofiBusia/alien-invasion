@@ -353,6 +353,14 @@ class LevelManager:
             self.game.boss_group.add(b)
             self.game.all_sprites.add(b)
             self._boss_spawned = True
+            # Dramatic boss entrance
+            self.game.screen_flash((255, 0, 0), 110)
+            self.game.particles.shake(18)
+            from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+            self.game.ui.show_message(
+                'BOSS INCOMING!',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120,
+                (255, 50, 50), 'xl')
 
         if self.boss_done:
             self.complete()

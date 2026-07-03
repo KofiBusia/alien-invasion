@@ -85,6 +85,18 @@ class SaveSystem:
         self.data = json.loads(json.dumps(DEFAULT_SAVE))
         self.save()
 
+    def reset_run(self):
+        """True New Game: wipe run data but keep high score, achievements, settings."""
+        keep = {
+            'high_score':  self.data.get('high_score', 0),
+            'achievements': list(self.data.get('achievements', [])),
+            'settings':    dict(self.data.get('settings', DEFAULT_SAVE['settings'])),
+            'stats':       dict(self.data.get('stats',    DEFAULT_SAVE['stats'])),
+        }
+        self.data = json.loads(json.dumps(DEFAULT_SAVE))
+        self.data.update(keep)
+        self.save()
+
     # ── Helpers ───────────────────────────────────────────────────────────────
     def get(self, key, default=None):
         return self.data.get(key, default)
