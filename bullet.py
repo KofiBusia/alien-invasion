@@ -66,16 +66,13 @@ class Bullet(pygame.sprite.Sprite):
             self.kill()
 
     def draw_trail(self, surface: pygame.Surface):
-        """Draw a very short fading energy streak. Vanishes within 3 frames."""
         col = self.color or (0, 200, 255)
         n   = len(self._trail)
         for i, (tx, ty) in enumerate(self._trail):
-            ratio = (i + 1) / max(n, 1)
-            alpha = int(90 * ratio)          # much more transparent than before
-            sz    = 1
-            ts    = pygame.Surface((sz*2+2, sz*2+2), pygame.SRCALPHA)
-            pygame.draw.circle(ts, (*col, alpha), (sz+1, sz+1), sz+1)
-            surface.blit(ts, (int(tx) - sz - 1, int(ty) - sz - 1))
+            ratio = (i + 1) / max(n, 1) * 0.38
+            c     = tuple(int(v * ratio) for v in col)
+            if any(v > 2 for v in c):
+                pygame.draw.circle(surface, c, (int(tx), int(ty)), 1)
 
 
 class RainbowBullet(Bullet):
@@ -104,34 +101,38 @@ class RainbowBullet(Bullet):
 
 
 class PlasmaBullet(Bullet):
+    # Pre-rendered frames shared across all plasma bullets (build once)
+    _frames: list = []
+
+    @classmethod
+    def _ensure_frames(cls):
+        if cls._frames:
+            return
+        for fi in range(16):
+            pulse = fi / 16 * math.tau
+            r     = int(28 + 4 * math.sin(pulse))
+            cr    = r // 2
+            s     = pygame.Surface((r, r), pygame.SRCALPHA)
+            pygame.draw.circle(s, (100,  0, 180, 45),  (cr, cr), cr)
+            pygame.draw.circle(s, (190,  0, 255, 120), (cr, cr), int(cr*0.75))
+            pygame.draw.circle(s, (230, 80, 255, 200), (cr, cr), int(cr*0.55))
+            pygame.draw.circle(s, (255,200, 255, 240), (cr, cr), int(cr*0.35))
+            pygame.draw.circle(s, (255, 255, 255),      (cr, cr), int(cr*0.2))
+            cls._frames.append(s)
+
     def __init__(self, x, y, vx, vy, damage):
+        PlasmaBullet._ensure_frames()
         super().__init__(x, y, vx, vy, damage, (200, 0, 255), size=(14, 14), glow=True)
-        self._pulse = 0
+        self._pulse_idx = 0
 
     def _build_image(self, size, color, glow):
-        s = pygame.Surface((28, 28), pygame.SRCALPHA)
-        # Multi-layer plasma orb
-        pygame.draw.circle(s, (100,  0, 180, 50),  (14, 14), 14)
-        pygame.draw.circle(s, (180,  0, 220, 100), (14, 14), 10)
-        pygame.draw.circle(s, (220, 60, 255, 180), (14, 14), 7)
-        pygame.draw.circle(s, (255,200, 255, 240), (14, 14), 4)
-        pygame.draw.circle(s, (255,255, 255),       (14, 14), 2)
-        self.image = s
+        PlasmaBullet._ensure_frames()
+        self.image = PlasmaBullet._frames[0]
 
     def update(self):
-        self._pulse += 0.3
-        # Pulse size
-        r  = int(28 + 4 * math.sin(self._pulse))
-        s  = pygame.Surface((r, r), pygame.SRCALPHA)
-        cr = r // 2
-        pygame.draw.circle(s, (100,  0, 180, 40),  (cr, cr), cr)
-        pygame.draw.circle(s, (200,  0, 255, 110), (cr, cr), int(cr*0.75))
-        pygame.draw.circle(s, (230, 80, 255, 200), (cr, cr), int(cr*0.55))
-        pygame.draw.circle(s, (255,200, 255, 240), (cr, cr), int(cr*0.35))
-        pygame.draw.circle(s, (255,255, 255),       (cr, cr), int(cr*0.2))
-        self.image = s
-        self.rect  = s.get_rect(center=(int(self.x), int(self.y)))
-        # Parent update (position only)
+        self._pulse_idx = (self._pulse_idx + 1) % len(PlasmaBullet._frames)
+        self.image = PlasmaBullet._frames[self._pulse_idx]
+        self.rect  = self.image.get_rect(center=(int(self.x), int(self.y)))
         self._trail.append((self.x, self.y))
         if len(self._trail) > 5:
             self._trail.pop(0)
@@ -145,11 +146,10 @@ class PlasmaBullet(Bullet):
     def draw_trail(self, surface: pygame.Surface):
         for i, (tx, ty) in enumerate(self._trail):
             ratio = (i + 1) / max(len(self._trail), 1)
-            alpha = int(120 * ratio)
-            sz    = max(2, int(ratio * 7))
-            ts    = pygame.Surface((sz*2, sz*2), pygame.SRCALPHA)
-            pygame.draw.circle(ts, (180, 0, 255, alpha), (sz, sz), sz)
-            surface.blit(ts, (int(tx)-sz, int(ty)-sz))
+            sz    = max(1, int(ratio * 6))
+            col   = (int(160 * ratio * 0.5), 0, int(230 * ratio * 0.5))
+            if col[2] > 3:
+                pygame.draw.circle(surface, col, (int(tx), int(ty)), sz)
 
 
 class MissileBullet(Bullet):
@@ -212,12 +212,10 @@ class MissileBullet(Bullet):
     def draw_trail(self, surface: pygame.Surface):
         for i, (tx, ty) in enumerate(self._trail):
             ratio = (i + 1) / max(len(self._trail), 1)
-            alpha = int(160 * ratio)
             sz    = max(1, int(ratio * 5))
-            col   = (255, int(120*ratio), 0)
-            ts    = pygame.Surface((sz*2+2, sz*2+2), pygame.SRCALPHA)
-            pygame.draw.circle(ts, (*col, alpha), (sz+1, sz+1), sz+1)
-            surface.blit(ts, (int(tx)-sz-1, int(ty)-sz-1))
+            col   = (int(200 * ratio * 0.7), int(100 * ratio * 0.5), 0)
+            if col[0] > 3:
+                pygame.draw.circle(surface, col, (int(tx), int(ty)), sz)
 
 
 class EnemyBullet(Bullet):
@@ -255,14 +253,13 @@ class EnemyBullet(Bullet):
             self.image = surf
 
     def draw_trail(self, surface: pygame.Surface):
-        col = (255, 60, 20) if self.explosive else (255, 50, 50)
+        base = (255, 55, 20) if self.explosive else (220, 40, 40)
         for i, (tx, ty) in enumerate(self._trail):
-            ratio = (i+1) / max(len(self._trail), 1)
-            alpha = int(120 * ratio)
+            ratio = (i + 1) / max(len(self._trail), 1)
             sz    = max(1, int(ratio * 3))
-            ts    = pygame.Surface((sz*2+2, sz*2+2), pygame.SRCALPHA)
-            pygame.draw.circle(ts, (*col, alpha), (sz+1, sz+1), sz+1)
-            surface.blit(ts, (int(tx)-sz-1, int(ty)-sz-1))
+            col   = tuple(int(v * ratio * 0.45) for v in base)
+            if col[0] > 3:
+                pygame.draw.circle(surface, col, (int(tx), int(ty)), sz)
 
 
 class BossLaser(pygame.sprite.Sprite):

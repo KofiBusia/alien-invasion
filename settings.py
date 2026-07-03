@@ -173,7 +173,7 @@ def get_level_config(level: int) -> dict:
 TOTAL_LEVELS = 20
 
 # ── Visual FX ─────────────────────────────────────────────────────────────────
-MAX_PARTICLES       = 1000
+MAX_PARTICLES       = 350 if IS_ANDROID else 1000
 EXPLOSION_PARTICLES = 38
 HIT_PARTICLES       = 8
 STAR_COUNT          = 160

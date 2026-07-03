@@ -3,7 +3,7 @@
 import math
 import random
 import pygame
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, IS_ANDROID
 from bullet import EnemyBullet, BossLaser
 from powerup import Coin, PowerUp
 from enemy import spawn_enemy
@@ -364,7 +364,9 @@ class Boss(pygame.sprite.Sprite):
             pygame.draw.line(surface, (200,200,200), (mx, by), (mx, by+bh), 2)
 
         # Label
-        font = pygame.font.SysFont('consolas', 13, bold=True)
+        if not hasattr(Boss, '_hud_font'):
+            Boss._hud_font = pygame.font.SysFont('consolas', 13, bold=True)
+        font = Boss._hud_font
         label= 'BOSS ⚠ ENRAGED' if self._rage_mode else f'BOSS — PHASE {self._phase+1}'
         col2 = (255, 80, 80) if self._rage_mode else (255, 200, 200)
         txt  = font.render(label, True, col2)
@@ -373,35 +375,53 @@ class Boss(pygame.sprite.Sprite):
     def draw_shield(self, surface: pygame.Surface):
         if not self._shield_active:
             return
-        t     = pygame.time.get_ticks()
-        alpha = int(80 + 40 * math.sin(t * 0.006))
-        rs    = pygame.Surface((200, 160), pygame.SRCALPHA)
-        pygame.draw.ellipse(rs, (50, 100, 255, alpha), (0, 0, 200, 160), 4)
-        pygame.draw.ellipse(rs, (100, 180, 255, alpha // 3), (0, 0, 200, 160))
-        surface.blit(rs, (int(self.x) - 100, int(self.y) - 80))
+        ix, iy = int(self.x) - 100, int(self.y) - 80
+        if IS_ANDROID:
+            pygame.draw.ellipse(surface, (50, 100, 255), (ix, iy, 200, 160), 4)
+        else:
+            t     = pygame.time.get_ticks()
+            alpha = int(80 + 40 * math.sin(t * 0.006))
+            rs    = pygame.Surface((200, 160), pygame.SRCALPHA)
+            pygame.draw.ellipse(rs, (50, 100, 255, alpha), (0, 0, 200, 160), 4)
+            pygame.draw.ellipse(rs, (100, 180, 255, alpha // 3), (0, 0, 200, 160))
+            surface.blit(rs, (ix, iy))
 
     def draw_rage_aura(self, surface: pygame.Surface):
         """Pulsing red corona drawn around the boss when enraged."""
         if not self._rage_mode:
             return
-        t     = pygame.time.get_ticks()
-        pulse = math.sin(t * 0.01) * 0.5 + 0.5
-        r     = int(110 + pulse * 30)
-        alpha = int(60 + pulse * 60)
-        s     = pygame.Surface((r*2+8, r*2+8), pygame.SRCALPHA)
-        pygame.draw.circle(s, (255, 20, 20, alpha),     (r+4, r+4), r, 6)
-        pygame.draw.circle(s, (255, 80, 0,  alpha//2),  (r+4, r+4), r+10, 3)
-        surface.blit(s, (int(self.x) - r - 4, int(self.y) - r - 4))
+        bx, by = int(self.x), int(self.y)
+        if IS_ANDROID:
+            # Direct circles — no SRCALPHA allocation
+            t     = pygame.time.get_ticks()
+            pulse = math.sin(t * 0.01) * 0.5 + 0.5
+            r     = int(110 + pulse * 30)
+            fade  = int(80 + pulse * 60)
+            col   = (min(255, fade), 0, 0)
+            pygame.draw.circle(surface, col, (bx, by), r, 6)
+        else:
+            t     = pygame.time.get_ticks()
+            pulse = math.sin(t * 0.01) * 0.5 + 0.5
+            r     = int(110 + pulse * 30)
+            alpha = int(60 + pulse * 60)
+            s     = pygame.Surface((r*2+8, r*2+8), pygame.SRCALPHA)
+            pygame.draw.circle(s, (255, 20, 20, alpha),    (r+4, r+4), r, 6)
+            pygame.draw.circle(s, (255, 80, 0, alpha//2),  (r+4, r+4), r+10, 3)
+            surface.blit(s, (bx - r - 4, by - r - 4))
 
         # Laser telegraph
         if self._laser_warning:
             warn_alpha = int(200 * (self._laser_warning_timer / 45))
-            warn_col   = (255, 30, 30, warn_alpha)
-            ws = pygame.Surface((6, SCREEN_HEIGHT), pygame.SRCALPHA)
-            ws.fill(warn_col)
-            surface.blit(ws, (self._laser_warning_x - 3, 0))
-            # Glow around warning line
-            for dx in (-12, -6, 6, 12):
-                gs = pygame.Surface((4, SCREEN_HEIGHT), pygame.SRCALPHA)
-                gs.fill((255, 0, 0, warn_alpha // 4))
-                surface.blit(gs, (self._laser_warning_x - 2 + dx, 0))
+            lx = self._laser_warning_x
+            if IS_ANDROID:
+                fade_col = (min(255, warn_alpha), 0, 0)
+                pygame.draw.line(surface, fade_col, (lx, 0), (lx, SCREEN_HEIGHT), 5)
+            else:
+                warn_col = (255, 30, 30, warn_alpha)
+                ws = pygame.Surface((6, SCREEN_HEIGHT), pygame.SRCALPHA)
+                ws.fill(warn_col)
+                surface.blit(ws, (lx - 3, 0))
+                for dx in (-12, -6, 6, 12):
+                    gs = pygame.Surface((4, SCREEN_HEIGHT), pygame.SRCALPHA)
+                    gs.fill((255, 0, 0, warn_alpha // 4))
+                    surface.blit(gs, (lx - 2 + dx, 0))

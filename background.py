@@ -3,7 +3,7 @@
 import random
 import math
 import pygame
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLANET_COUNT, COMET_CHANCE
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLANET_COUNT, COMET_CHANCE, IS_ANDROID
 
 
 # ── Star layers (far / mid / near) ───────────────────────────────────────────
@@ -137,28 +137,30 @@ class Planet:
     def draw(self, surface: pygame.Surface):
         ix, iy = int(self.x), int(self.y)
 
-        # Atmosphere halo
-        for dr in range(self.r + 14, self.r, -2):
-            alpha = max(0, int(25 * (self.r - dr + 14) / 14))
-            ah = pygame.Surface((dr*2, dr*2), pygame.SRCALPHA)
-            pygame.draw.circle(ah, (*self.color, alpha), (dr, dr), dr)
-            surface.blit(ah, (ix - dr, iy - dr))
+        if not IS_ANDROID:
+            # Atmosphere halo (SRCALPHA — desktop only)
+            for dr in range(self.r + 14, self.r, -2):
+                alpha = max(0, int(25 * (self.r - dr + 14) / 14))
+                ah = pygame.Surface((dr*2, dr*2), pygame.SRCALPHA)
+                pygame.draw.circle(ah, (*self.color, alpha), (dr, dr), dr)
+                surface.blit(ah, (ix - dr, iy - dr))
 
         # Body
         pygame.draw.circle(surface, self.color, (ix, iy), self.r)
 
-        # Surface bands (if gas giant)
-        if self.stripe:
-            band_col = tuple(min(255, v + 30) for v in self.color)
-            for band_y in range(-self.r + 8, self.r - 8, 14):
-                bh = 5
-                clip = pygame.Surface((self.r*2, self.r*2), pygame.SRCALPHA)
-                pygame.draw.circle(clip, (255,255,255), (self.r, self.r), self.r)
-                band_surf = pygame.Surface((self.r*2, bh), pygame.SRCALPHA)
-                band_surf.fill((*band_col, 60))
-                clip.blit(band_surf, (0, self.r + band_y - bh//2),
-                          special_flags=pygame.BLEND_RGBA_MIN)
-                surface.blit(clip, (ix - self.r, iy - self.r))
+        if not IS_ANDROID:
+            # Surface bands (gas giant) — desktop only
+            if self.stripe:
+                band_col = tuple(min(255, v + 30) for v in self.color)
+                for band_y in range(-self.r + 8, self.r - 8, 14):
+                    bh = 5
+                    clip = pygame.Surface((self.r*2, self.r*2), pygame.SRCALPHA)
+                    pygame.draw.circle(clip, (255,255,255), (self.r, self.r), self.r)
+                    band_surf = pygame.Surface((self.r*2, bh), pygame.SRCALPHA)
+                    band_surf.fill((*band_col, 60))
+                    clip.blit(band_surf, (0, self.r + band_y - bh//2),
+                              special_flags=pygame.BLEND_RGBA_MIN)
+                    surface.blit(clip, (ix - self.r, iy - self.r))
 
         # Highlight
         hl = tuple(min(255, v + 70) for v in self.color)
@@ -166,8 +168,7 @@ class Planet:
                            (ix - self.r//3, iy - self.r//3),
                            max(2, self.r//4))
 
-        # Ring
-        if self.ring:
+        if not IS_ANDROID and self.ring:
             rw = self.r * 4
             rh = self.r + 8
             rs = pygame.Surface((rw, rh), pygame.SRCALPHA)
@@ -208,16 +209,19 @@ class Comet:
         n = len(self.tail)
         for i, (tx, ty) in enumerate(self.tail):
             ratio = i / max(n, 1)
-            alpha = int(220 * ratio)
             size  = max(1, int(ratio * 4))
-            ts    = pygame.Surface((size*2+2, size*2+2), pygame.SRCALPHA)
-            # Gradient: blue-white core → orange tail
-            if ratio > 0.6:
-                c = (200, 220, 255, alpha)
+            if IS_ANDROID:
+                # No per-segment SRCALPHA on Android — scale RGB instead
+                fade = ratio * 0.75
+                c = (int(210 * fade), int(200 * fade), int(255 * fade))
+                if c[2] > 3:
+                    pygame.draw.circle(surface, c, (int(tx), int(ty)), size)
             else:
-                c = (255, 180, 80, alpha)
-            pygame.draw.circle(ts, c, (size+1, size+1), size+1)
-            surface.blit(ts, (int(tx)-size-1, int(ty)-size-1))
+                alpha = int(220 * ratio)
+                ts    = pygame.Surface((size*2+2, size*2+2), pygame.SRCALPHA)
+                c = (200, 220, 255, alpha) if ratio > 0.6 else (255, 180, 80, alpha)
+                pygame.draw.circle(ts, c, (size+1, size+1), size+1)
+                surface.blit(ts, (int(tx)-size-1, int(ty)-size-1))
         # Head
         pygame.draw.circle(surface, (255, 255, 255), (int(self.x), int(self.y)), 3)
         pygame.draw.circle(surface, (200, 240, 255), (int(self.x), int(self.y)), 5, 1)
@@ -264,6 +268,8 @@ class Aurora:
             b['phase'] += 0.008
 
     def draw(self, surface: pygame.Surface):
+        if IS_ANDROID:
+            return   # aurora creates one SRCALPHA surface per row — too expensive
         t = self._tick
         for b in self._bands:
             pulse  = 0.5 + 0.5 * math.sin(b['phase'])
@@ -273,14 +279,12 @@ class Aurora:
             w      = b['width']
             h      = b['height']
             bx     = int(b['x'])
-            # Draw as a vertical gradient blob near the top
             s = pygame.Surface((w, h), pygame.SRCALPHA)
             for dy in range(0, h, 2):
                 row_a = int(alpha * math.sin(dy / h * math.pi))
                 if row_a < 2:
                     continue
                 col = (*b['color'], row_a)
-                # Wavy horizontal extent
                 wave = math.sin(t * 0.02 + dy * 0.05 + b['phase']) * 30
                 pygame.draw.line(s, col, (max(0,int(wave)), dy), (min(w, w+int(wave)), dy))
             surface.blit(s, (bx - w//2, 0))

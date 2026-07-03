@@ -3,7 +3,9 @@
 import random
 import math
 import pygame
-from settings import MAX_PARTICLES, SCREEN_SHAKE_DECAY, MAX_SHAKE
+from settings import MAX_PARTICLES, SCREEN_SHAKE_DECAY, MAX_SHAKE, IS_ANDROID
+
+_ANDROID_SCALE = 0.25 if IS_ANDROID else 1.0
 
 
 # ── Base particle ─────────────────────────────────────────────────────────────
@@ -33,14 +35,18 @@ class Particle:
         if self.life <= 0:
             return
         ratio = self.life / self.max_life
-        alpha = max(0, min(255, int(255 * ratio))) if self.fade else 255
-        r = max(0, min(255, self.color[0]))
-        g = max(0, min(255, self.color[1]))
-        b = max(0, min(255, self.color[2]))
         sz = max(1, int(self.size * ratio))
-        s  = pygame.Surface((sz*2, sz*2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (r, g, b, alpha), (sz, sz), sz)
-        surface.blit(s, (int(self.x) - sz, int(self.y) - sz))
+        # Multiply colour by ratio instead of using SRCALPHA — zero allocations,
+        # looks identical on a dark background (alpha≈RGB-scale on black).
+        fade = ratio if self.fade else 1.0
+        col = (
+            max(0, min(255, int(self.color[0] * fade))),
+            max(0, min(255, int(self.color[1] * fade))),
+            max(0, min(255, int(self.color[2] * fade))),
+        )
+        if col[0] < 3 and col[1] < 3 and col[2] < 3:
+            return
+        pygame.draw.circle(surface, col, (int(self.x), int(self.y)), sz)
 
 
 # ── Damage number ─────────────────────────────────────────────────────────────
@@ -82,13 +88,17 @@ class DamageNumber:
         if size not in DamageNumber._fonts:
             DamageNumber._fonts[size] = pygame.font.SysFont('consolas', size, bold=True)
         font  = DamageNumber._fonts[size]
-        alpha = min(255, int(self.life / self.max_life * 320))
-        txt   = font.render(self.text, True, self.color)
-        txt.set_alpha(alpha)
-        # Drop shadow
-        sh = font.render(self.text, True, (0, 0, 0))
-        sh.set_alpha(alpha // 2)
-        surface.blit(sh, (int(self.x)+1, int(self.y)+1))
+        ratio = self.life / self.max_life
+        # Fade colour instead of set_alpha — avoids surface copy overhead
+        fade  = min(1.0, ratio * 1.25)
+        col   = tuple(int(v * fade) for v in self.color)
+        if all(v < 4 for v in col):
+            return
+        if not IS_ANDROID:
+            sh = font.render(self.text, True, (0, 0, 0))
+            sh.set_alpha(int(fade * 120))
+            surface.blit(sh, (int(self.x)+1, int(self.y)+1))
+        txt = font.render(self.text, True, col)
         surface.blit(txt, (int(self.x), int(self.y)))
 
 
@@ -109,14 +119,16 @@ class Shockwave:
         return self.life > 0 and self.radius < self.max_radius
 
     def draw(self, surface: pygame.Surface):
-        ratio = 1 - self.radius / self.max_radius
-        alpha = int(255 * ratio ** 0.5)
-        width = max(1, int(4 * ratio))
         r = int(self.radius)
-        s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
-        c = (*self.color, alpha)
-        pygame.draw.circle(s, c, (r+2, r+2), r, width)
-        surface.blit(s, (self.x - r - 2, self.y - r - 2))
+        if r <= 0:
+            return
+        ratio = 1.0 - self.radius / self.max_radius
+        fade  = ratio ** 0.5
+        col   = tuple(int(v * fade) for v in self.color)
+        if all(v < 3 for v in col):
+            return
+        width = max(1, int(4 * ratio))
+        pygame.draw.circle(surface, col, (int(self.x), int(self.y)), r, width)
 
 
 # ── Lightning bolt ────────────────────────────────────────────────────────────
@@ -139,15 +151,12 @@ class Lightning:
         return self.life > 0
 
     def draw(self, surface: pygame.Surface):
-        alpha = int(255 * self.life / self.max_life)
-        col   = (*self.color, alpha)
-        for x1,y1,x2,y2 in self._segs:
-            s = pygame.Surface((abs(int(x2-x1))+4, abs(int(y2-y1))+4), pygame.SRCALPHA)
-            # blit directly for simplicity
-        # Draw on surface directly (simpler)
-        for x1,y1,x2,y2 in self._segs:
-            c = tuple(min(255, int(v * alpha/255)) for v in self.color)
-            pygame.draw.line(surface, c, (int(x1),int(y1)), (int(x2),int(y2)), 2)
+        fade = self.life / self.max_life
+        col  = tuple(int(v * fade) for v in self.color)
+        if all(v < 3 for v in col):
+            return
+        for x1, y1, x2, y2 in self._segs:
+            pygame.draw.line(surface, col, (int(x1), int(y1)), (int(x2), int(y2)), 2)
 
 
 # ── Main particle system ──────────────────────────────────────────────────────
@@ -164,6 +173,7 @@ class ParticleSystem:
 
     # ── Emitters ──────────────────────────────────────────────────────────────
     def explosion(self, x, y, color=(255,160,40), count=28, speed=6, size=5):
+        count  = max(4, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for _ in range(min(count, budget)):
             ang = random.uniform(0, math.tau)
@@ -178,6 +188,7 @@ class ParticleSystem:
 
     def fire_ring(self, x, y, color=(255, 90, 0), count=28, radius=45):
         """Expanding ring of fire particles — spectacular kill effect."""
+        count  = max(4, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for i in range(min(count, budget)):
             ang = i / count * math.tau
@@ -195,6 +206,7 @@ class ParticleSystem:
 
     def smoke_puff(self, x, y, count=18):
         """Rising grey smoke after explosion."""
+        count  = max(3, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for _ in range(min(count, budget)):
             ang = random.uniform(0, math.tau)
@@ -208,6 +220,7 @@ class ParticleSystem:
 
     def debris_burst(self, x, y, color=(160, 110, 50), count=14):
         """Hot debris chunks flying outward."""
+        count  = max(3, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for _ in range(min(count, budget)):
             ang = random.uniform(0, math.tau)
@@ -236,6 +249,7 @@ class ParticleSystem:
             self.fire_ring(x+dx, y+dy, color, count=14, radius=22)
 
     def hit_sparks(self, x, y, color=(255,255,100), count=8):
+        count = max(2, int(count * _ANDROID_SCALE))
         for _ in range(count):
             ang = random.uniform(0, math.tau)
             spd = random.uniform(2, 5)
@@ -251,6 +265,7 @@ class ParticleSystem:
                          random.randint(6,14), color, size))
 
     def stars_burst(self, x, y, count=40):
+        count = max(4, int(count * _ANDROID_SCALE))
         for _ in range(count):
             ang = random.uniform(0, math.tau)
             spd = random.uniform(2, 10)

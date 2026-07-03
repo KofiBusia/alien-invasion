@@ -5,7 +5,8 @@ import random
 import pygame
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_SPEED, PLAYER_HEALTH,
-    PLAYER_SHIELD, PLAYER_LIVES, PLAYER_INVINCIBILITY_MS, WEAPONS, WEAPON_ORDER
+    PLAYER_SHIELD, PLAYER_LIVES, PLAYER_INVINCIBILITY_MS, WEAPONS, WEAPON_ORDER,
+    IS_ANDROID
 )
 from bullet import Bullet, RainbowBullet, PlasmaBullet, MissileBullet
 from trails import TrailSystem
@@ -370,43 +371,55 @@ class Player(pygame.sprite.Sprite):
         if self.shield > 0:
             ratio = self.shield / self.max_shield
             r     = self.rect.width // 2 + 14
-            ss    = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
-            alpha = int(55 * ratio)
-            pygame.draw.ellipse(ss, (50, 120, 255, alpha), ss.get_rect())
-            pygame.draw.ellipse(ss, (100, 200, 255, 180), ss.get_rect(), 2)
-            surface.blit(ss, (self.rect.centerx - r, self.rect.centery - r))
+            cx, cy = self.rect.centerx, self.rect.centery
+            if IS_ANDROID:
+                # Direct draw — no SRCALPHA surface
+                fade = int(120 * ratio)
+                col  = (int(50 * ratio), int(120 * ratio), min(255, int(255 * ratio)))
+                pygame.draw.ellipse(surface, col, (cx-r, cy-r, r*2, r*2), 2)
+            else:
+                ss    = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+                alpha = int(55 * ratio)
+                pygame.draw.ellipse(ss, (50, 120, 255, alpha), ss.get_rect())
+                pygame.draw.ellipse(ss, (100, 200, 255, 180), ss.get_rect(), 2)
+                surface.blit(ss, (cx - r, cy - r))
 
         surface.blit(self.image, self.rect)
 
         # Invincibility — rotating dual-hex shield
         if self.has_effect('invincibility'):
             t   = pygame.time.get_ticks()
-            a   = int(160 + 80 * math.sin(t * 0.009))
             ang = t * 0.0028
             cx, cy = int(self.x), int(self.y)
             R   = 42
-            # Outer hex (slow clockwise)
-            pts_out = []
-            for i in range(6):
-                θ = ang + i * math.tau / 6
-                pts_out.append((cx + int(R * math.cos(θ)), cy + int(R * math.sin(θ))))
-            os_ = pygame.Surface((R*2+8, R*2+8), pygame.SRCALPHA)
-            lp  = [(p[0]-cx+R+4, p[1]-cy+R+4) for p in pts_out]
-            pygame.draw.polygon(os_, (200, 0, 255, a), lp, 3)
-            surface.blit(os_, (cx-R-4, cy-R-4))
-            # Inner hex (counter-rotating, smaller)
-            pts_in = []
-            Ri = 26
-            for i in range(6):
-                θ = -ang * 1.6 + i * math.tau / 6
-                pts_in.append((cx + int(Ri * math.cos(θ)), cy + int(Ri * math.sin(θ))))
-            is_ = pygame.Surface((Ri*2+8, Ri*2+8), pygame.SRCALPHA)
-            lp2 = [(p[0]-cx+Ri+4, p[1]-cy+Ri+4) for p in pts_in]
-            pygame.draw.polygon(is_, (255, 100, 255, int(a * 0.65)), lp2, 2)
-            surface.blit(is_, (cx-Ri-4, cy-Ri-4))
+            pts_out = [(cx + int(R * math.cos(ang + i * math.tau / 6)),
+                        cy + int(R * math.sin(ang + i * math.tau / 6)))
+                       for i in range(6)]
+            if IS_ANDROID:
+                # Direct polygon draw — no SRCALPHA surface
+                pygame.draw.polygon(surface, (200, 0, 255), pts_out, 3)
+                Ri = 26
+                pts_in = [(cx + int(Ri * math.cos(-ang * 1.6 + i * math.tau / 6)),
+                           cy + int(Ri * math.sin(-ang * 1.6 + i * math.tau / 6)))
+                          for i in range(6)]
+                pygame.draw.polygon(surface, (180, 60, 220), pts_in, 2)
+            else:
+                a   = int(160 + 80 * math.sin(t * 0.009))
+                os_ = pygame.Surface((R*2+8, R*2+8), pygame.SRCALPHA)
+                lp  = [(p[0]-cx+R+4, p[1]-cy+R+4) for p in pts_out]
+                pygame.draw.polygon(os_, (200, 0, 255, a), lp, 3)
+                surface.blit(os_, (cx-R-4, cy-R-4))
+                Ri = 26
+                pts_in = [(cx + int(Ri * math.cos(-ang * 1.6 + i * math.tau / 6)),
+                           cy + int(Ri * math.sin(-ang * 1.6 + i * math.tau / 6)))
+                          for i in range(6)]
+                is_ = pygame.Surface((Ri*2+8, Ri*2+8), pygame.SRCALPHA)
+                lp2 = [(p[0]-cx+Ri+4, p[1]-cy+Ri+4) for p in pts_in]
+                pygame.draw.polygon(is_, (255, 100, 255, int(a * 0.65)), lp2, 2)
+                surface.blit(is_, (cx-Ri-4, cy-Ri-4))
 
         # Damage boost — pulsing energy wings
-        if self.has_effect('damage_boost'):
+        if self.has_effect('damage_boost') and not IS_ANDROID:
             t2  = pygame.time.get_ticks()
             pa  = int(180 + 60 * math.sin(t2 * 0.012))
             for sign in (-1, 1):

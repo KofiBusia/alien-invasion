@@ -71,9 +71,13 @@ class PowerUp(pygame.sprite.Sprite):
         if self.y > SCREEN_HEIGHT + 40:
             self.kill()
 
+    _label_font = None
+
     def draw_label(self, surface: pygame.Surface):
         """Draw floating name text above power-up."""
-        font = pygame.font.SysFont('consolas', 10)
+        if PowerUp._label_font is None:
+            PowerUp._label_font = pygame.font.SysFont('consolas', 10)
+        font = PowerUp._label_font
         txt  = font.render(self.name, True, self.color)
         alpha = max(0, min(255, int(255 * math.sin(self._tick * 0.08))))
         txt.set_alpha(alpha)

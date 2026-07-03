@@ -77,6 +77,8 @@ class Game:
         self._prev_state      = 'MAIN_MENU'
         self._settings_origin = 'MAIN_MENU'
         self._font_fps        = pygame.font.SysFont('consolas', 14)
+        self._font_combo_big  = pygame.font.SysFont('consolas', 36, bold=True)
+        self._font_combo_small= pygame.font.SysFont('consolas', 18)
         self._pending_achievement: list[str] = []
 
         self._q_held = self._e_held = False
@@ -865,8 +867,9 @@ class Game:
                 b.draw_trail(target)
             target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
 
-        # Glow pass (additive)
-        self._draw_glow_pass(target)
+        # Glow pass (additive — desktop only; too expensive on Android)
+        if not IS_ANDROID:
+            self._draw_glow_pass(target)
 
         # Particles + damage numbers
         self.particles.draw(target)
@@ -904,8 +907,8 @@ class Game:
 
     def _draw_combo(self, surface: pygame.Surface):
         """Draw a kinetic combo counter near the bottom center."""
-        font_big  = pygame.font.SysFont('consolas', 36, bold=True)
-        font_small= pygame.font.SysFont('consolas', 18)
+        font_big  = self._font_combo_big
+        font_small= self._font_combo_small
 
         # Pulsing scale
         t     = pygame.time.get_ticks()
