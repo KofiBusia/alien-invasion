@@ -155,6 +155,12 @@ class Game:
         self._combo_mult = 1.0        # score multiplier (1.0 + combo * 0.1)
         self._combo_timer= 0          # frames until combo resets
 
+        # Kill streak (resets when player takes real damage)
+        self._kill_streak = 0
+
+        # Daily login bonus (0 if already claimed today)
+        self._daily_bonus = self.save.check_daily_bonus()
+
         # Screen flash (damage / pickup / boss rage)
         self._flash_surf   = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         self._flash_alpha  = 0
@@ -216,10 +222,11 @@ class Game:
         self.level_manager = LevelManager(self)
         self.level_manager.start_level(level)
 
-        # Reset combo, perks, and asteroid state on new game
+        # Reset combo, kill streak, perks, and asteroid state on new game
         self._combo       = 0
         self._combo_mult  = 1.0
         self._combo_timer = 0
+        self._kill_streak = 0
         self._perk_screen._history.clear()
         self.asteroids.empty()
         self._asteroid_field.reset()
@@ -639,28 +646,45 @@ class Game:
 
     # ── Combo ─────────────────────────────────────────────────────────────────
     def _on_kill(self, enemy):
-        """Call whenever an enemy is destroyed — handles combo + score mult."""
+        """Call whenever an enemy is destroyed — handles combo, kill streak, score."""
         self._combo      += 1
         self._combo_timer = 220   # ~3.6 s at 60 fps
         self._combo_mult  = min(5.0, 1.0 + self._combo * 0.1)
+
+        ex = int(getattr(enemy, 'x', SCREEN_WIDTH  // 2))
+        ey = int(getattr(enemy, 'y', SCREEN_HEIGHT // 2))
+        ecol = getattr(enemy, 'color', (255, 160, 40))
 
         # Milestone combos get a fanfare
         if self._combo in (5, 10, 20, 50):
             cols = {5:(255,220,50), 10:(255,140,20), 20:(255,50,200), 50:(50,255,255)}
             col  = cols[self._combo]
+            self.ui.show_message(f'{self._combo}x COMBO!', ex, ey - 30, col, 'lg')
+            self.particles.stars_burst(ex, ey, 30)
+
+        # Kill streak — resets when player takes real damage
+        self._kill_streak += 1
+        ks = self._kill_streak
+        if ks in (10, 25, 50):
+            ks_rewards = {10: 200, 25: 600, 50: 1500}
+            ks_colors  = {10: (255, 180, 0), 25: (255, 50, 200), 50: (50, 255, 255)}
+            reward = ks_rewards[ks]
+            kscol  = ks_colors[ks]
+            if self.player:
+                self.player.coins += reward
             self.ui.show_message(
-                f'{self._combo}x COMBO!',
-                enemy.x if hasattr(enemy,'x') else SCREEN_WIDTH//2,
-                (enemy.y if hasattr(enemy,'y') else SCREEN_HEIGHT//2) - 30,
-                col, 'lg')
-            self.particles.stars_burst(
-                int(enemy.x if hasattr(enemy,'x') else SCREEN_WIDTH//2),
-                int(enemy.y if hasattr(enemy,'y') else SCREEN_HEIGHT//2), 30)
+                f'KILL STREAK ×{ks}!  +{reward}',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 100,
+                kscol, 'lg')
+            self.particles.stars_burst(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 50)
+            self.screen_flash(kscol, 70)
+
+        # Shockwave ring on every kill (desktop only — avoids Android overdraw)
+        if not IS_ANDROID:
+            self.particles.shockwave_ring(ex, ey, ecol, max_radius=58, speed=6)
 
         # Chain blast perk
         if self.player and self.player.perk_chain_blast and random.random() < 0.35:
-            ex = getattr(enemy, 'x', SCREEN_WIDTH // 2)
-            ey = getattr(enemy, 'y', SCREEN_HEIGHT // 2)
             self._area_damage(ex, ey, 80, 18, source='chain')
 
 
@@ -802,7 +826,11 @@ class Game:
         for bullet in list(self.enemy_bullets):
             if bullet.rect.colliderect(player.rect):
                 dmg = bullet.damage
+                _was_inv = (pygame.time.get_ticks() < player._inv_until
+                            or player.has_effect('invincibility'))
                 player.take_damage(dmg)
+                if not _was_inv and self._kill_streak > 0:
+                    self._kill_streak = 0
                 bullet.kill()
                 if dmg > 0:
                     self.particles.damage_number(
@@ -819,7 +847,11 @@ class Game:
         for enemy in list(self.enemies):
             if enemy.rect.colliderect(player.rect):
                 dmg = enemy.damage
+                _was_inv = (pygame.time.get_ticks() < player._inv_until
+                            or player.has_effect('invincibility'))
                 player.take_damage(dmg)
+                if not _was_inv and self._kill_streak > 0:
+                    self._kill_streak = 0
                 enemy.take_damage(enemy.max_health)
                 if dmg > 0:
                     self.screen_flash((220, 30, 30), 80)
@@ -832,6 +864,8 @@ class Game:
                 msg = pu.apply(player, self.particles)
                 if msg == 'BOMB!':
                     self._trigger_bomb()
+                elif msg == 'FREEZE!':
+                    self._trigger_freeze_bomb()
                 else:
                     self.ui.show_message(msg, player.x, player.y - 40,
                                          pu.color, 'md')
@@ -917,6 +951,27 @@ class Game:
         self.audio.play('explosion')
         self.ui.show_message('BOMB!', SCREEN_WIDTH//2, SCREEN_HEIGHT//2,
                              (255,50,150), 'xl')
+
+    def _trigger_freeze_bomb(self):
+        """Freeze Bomb: wipe all enemy bullets and weaken every enemy."""
+        for bullet in list(self.enemy_bullets):
+            self.particles.hit_sparks(
+                bullet.rect.centerx, bullet.rect.centery, (0, 200, 255), count=4)
+            bullet.kill()
+        for enemy in list(self.enemies):
+            killed = enemy.take_damage(30)
+            self.particles.hit_sparks(int(enemy.x), int(enemy.y), (0, 200, 255), count=6)
+            if killed:
+                self._on_kill(enemy)
+                self.ui._kill_flash = 22
+        for boss in list(self.boss_group):
+            boss.take_damage(boss.max_health // 10)
+        self.particles.shockwave_ring(
+            SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, (0, 200, 255), max_radius=340, speed=12)
+        self.screen_flash((0, 180, 255), 90)
+        self.audio.play('explosion')
+        self.ui.show_message('FREEZE BOMB!', SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2,
+                             (0, 200, 255), 'xl')
 
     def _splash_damage(self, x: float, y: float, radius: float, dmg: int):
         """Area damage after a kill — creates spectacular chain reactions."""

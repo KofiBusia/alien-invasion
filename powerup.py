@@ -43,6 +43,8 @@ class PowerUp(pygame.sprite.Sprite):
             'rapid_fire':    'R', 'damage_boost':'D',
             'speed_boost':   'V', 'coin_magnet': 'M',
             'invincibility': 'I', 'bomb':        'B',
+            'full_heal':     'F', 'power_surge': 'P',
+            'freeze_bomb':   'Z',
         }
         letter = letters.get(self.ptype, '?')
         txt = font.render(letter, True, (0,0,0))
@@ -112,6 +114,17 @@ class PowerUp(pygame.sprite.Sprite):
             return 'Invincible!'
         elif pt == 'bomb':
             return 'BOMB!'   # game handles killing all enemies
+        elif pt == 'full_heal':
+            player.health = player.max_health
+            player.shield = player.max_shield
+            return 'FULLY REPAIRED!'
+        elif pt == 'power_surge':
+            player.add_effect('rapid_fire',   self.duration)
+            player.add_effect('damage_boost', self.duration)
+            player.add_effect('speed_boost',  self.duration)
+            return 'POWER SURGE!'
+        elif pt == 'freeze_bomb':
+            return 'FREEZE!'  # game handles this
         return ''
 
 

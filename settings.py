@@ -135,6 +135,9 @@ POWERUP_CONFIGS = {
     'coin_magnet':  {'name': 'Coin Magnet',     'color': (255, 215,  0),  'duration': 8000, 'drop': 0.08},
     'invincibility':{'name': 'Invincibility',   'color': (200,   0, 255), 'duration': 4000, 'drop': 0.05},
     'bomb':         {'name': 'Screen Bomb',     'color': (255,  50, 150), 'duration': 0,    'drop': 0.05},
+    'full_heal':   {'name': 'Full Repair',    'color': (255, 120, 180), 'duration': 0,    'drop': 0.04},
+    'power_surge': {'name': 'POWER SURGE!',   'color': (255, 160,   0), 'duration': 8000, 'drop': 0.05},
+    'freeze_bomb': {'name': 'Freeze Bomb',    'color': (  0, 200, 255), 'duration': 0,    'drop': 0.05},
 }
 POWERUP_ORDER = list(POWERUP_CONFIGS.keys())
 

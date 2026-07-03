@@ -470,6 +470,20 @@ class UIManager:
         kt = kf.render(f'KILLS: {kills:,}', True, kc)
         surface.blit(kt, (SCREEN_WIDTH-kt.get_width()-16, H-14))
 
+        # Perk build dots — colored circles for each perk the player has picked
+        try:
+            history = self.game._perk_screen._history
+            if history:
+                dot_x0 = 200
+                for i, pk in enumerate(history[:18]):
+                    col  = pk.get('color', (180, 180, 180))
+                    dxc  = dot_x0 + i * 16
+                    pygame.draw.circle(surface, col, (dxc, H // 2), 6)
+                    bright = tuple(min(255, v + 80) for v in col)
+                    pygame.draw.circle(surface, bright, (dxc, H // 2), 3)
+        except Exception:
+            pass
+
     # ── BOTTOM BAR ───────────────────────────────────────────────────────────
     def _draw_bottom_bar(self, surface, p):
         BH = 80
@@ -648,6 +662,13 @@ class UIManager:
             'WASD / Arrows  ·  Space to shoot  ·  Q/E or Scroll to switch weapon  ·  F11 = Fullscreen',
             True, (72,82,122))
         surface.blit(hint, hint.get_rect(centerx=SCREEN_WIDTH//2, y=SCREEN_HEIGHT-26))
+        # Daily bonus banner — visible all session once claimed today
+        daily = getattr(self.game, '_daily_bonus', 0)
+        if daily > 0:
+            alpha  = int(190 + 65 * math.sin(self._tick * 0.05))
+            banner = self._f_md.render(f'  DAILY BONUS  +{daily} COINS  ', True, GOLD)
+            banner.set_alpha(alpha)
+            surface.blit(banner, banner.get_rect(centerx=SCREEN_WIDTH//2, y=SCREEN_HEIGHT-68))
 
     # ── PAUSE ─────────────────────────────────────────────────────────────────
     def draw_pause(self, surface: pygame.Surface):

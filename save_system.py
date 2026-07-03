@@ -20,6 +20,7 @@ DEFAULT_SAVE = {
     "high_score":        0,
     "total_coins":       0,
     "current_coins":     0,
+    "last_daily":        "",
     "best_level":        0,
     "unlocked_weapons":  ["laser"],
     "upgrades": {
@@ -84,6 +85,19 @@ class SaveSystem:
     def reset(self):
         self.data = json.loads(json.dumps(DEFAULT_SAVE))
         self.save()
+
+    def check_daily_bonus(self) -> int:
+        """Award 300 coins once per calendar day. Returns bonus (0 if already claimed)."""
+        import datetime
+        today = str(datetime.date.today())
+        if self.data.get('last_daily') == today:
+            return 0
+        self.data['last_daily'] = today
+        bonus = 300
+        self.data['current_coins'] = self.data.get('current_coins', 0) + bonus
+        self.data['total_coins']   = self.data.get('total_coins', 0) + bonus
+        self.save()
+        return bonus
 
     def reset_run(self):
         """True New Game: wipe run data but keep high score, achievements, settings."""
