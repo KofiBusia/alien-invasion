@@ -78,10 +78,8 @@ class Game:
         self.asteroids       = pygame.sprite.Group()
         self._asteroid_field = AsteroidField(self)
 
-        # Mid-run perk system
+        # Mid-run perk system (triggered every 5 completed levels)
         self._perk_screen  = PerkScreen()
-        self._run_kills    = 0
-        self._next_perk_at = 15
 
         self.player        = None
         self.level_manager = None
@@ -218,12 +216,11 @@ class Game:
         self.level_manager = LevelManager(self)
         self.level_manager.start_level(level)
 
-        # Reset combo and perk/asteroid state on new game
+        # Reset combo, perks, and asteroid state on new game
         self._combo       = 0
         self._combo_mult  = 1.0
         self._combo_timer = 0
-        self._run_kills   = 0
-        self._next_perk_at= 15
+        self._perk_screen._history.clear()
         self.asteroids.empty()
         self._asteroid_field.reset()
 
@@ -231,6 +228,7 @@ class Game:
         self.change_state('PLAYING')
 
     def _next_level(self):
+        completed = self.current_level
         self.current_level += 1
         if self.current_level > TOTAL_LEVELS:
             self._start_ultimate_boss()
@@ -239,7 +237,14 @@ class Game:
         self._spawn_allies()
         self.level_cfg = get_level_config(self.current_level)
         self.level_manager.start_level(self.current_level)
-        self.change_state('PLAYING')
+
+        # Perk upgrade screen every 5 completed levels
+        if completed % 5 == 0:
+            exclude = [p['id'] for p in self._perk_screen._history]
+            self._perk_screen.show(pick_3_perks(exclude), completed)
+            self.change_state('PERK_SELECT')
+        else:
+            self.change_state('PLAYING')
 
     def _spawn_allies(self):
         """Spawn all purchased ally ships for the current level."""
@@ -330,13 +335,14 @@ class Game:
                     if idx < len(perks) and self.player:
                         chosen = perks[idx]
                         self.player.apply_perk(chosen['id'])
+                        self._perk_screen.record_pick(chosen)
                         self.ui.show_message(
-                            chosen['name'] + '!',
-                            SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30,
+                            chosen['name'] + ' ACQUIRED!',
+                            SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50,
                             chosen['color'], 'lg')
-                        self.screen_flash(chosen['color'], 50)
-                    prev = self._prev_state if self._prev_state in ('PLAYING', 'ULTIMATE_BOSS') else 'PLAYING'
-                    self.change_state(prev)
+                        self.screen_flash(chosen['color'], 60)
+                        self.particles.stars_burst(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 40)
+                    self.change_state('PLAYING')
             elif self._state in ('PLAYING', 'ULTIMATE_BOSS'):
                 self._handle_playing_event(event)
             elif self._state == 'PAUSED':
@@ -657,12 +663,6 @@ class Game:
             ey = getattr(enemy, 'y', SCREEN_HEIGHT // 2)
             self._area_damage(ex, ey, 80, 18, source='chain')
 
-        # Mid-run perk milestone
-        self._run_kills += 1
-        if self._run_kills >= self._next_perk_at and self._state in ('PLAYING', 'ULTIMATE_BOSS'):
-            self._next_perk_at += 15
-            self._perk_screen.show(pick_3_perks())
-            self.change_state('PERK_SELECT')
 
     def _area_damage(self, cx, cy, radius, dmg, source='explosion'):
         self.particles.explosion(int(cx), int(cy), (255, 160, 40), count=18, speed=5)

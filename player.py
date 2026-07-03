@@ -124,6 +124,12 @@ class Player(pygame.sprite.Sprite):
             self.health      = min(self.max_health, self.health + 60)
         elif perk_id == 'lucky_shot':
             self.crit_chance = min(0.90, self.crit_chance + 0.30)
+        elif perk_id == 'turbo_shot':
+            self.bullet_spd_mult = min(self.bullet_spd_mult * 1.5, 4.0)
+        elif perk_id == 'gold_rush':
+            self.coin_mult = min(self.coin_mult * 1.5, 6.0)
+        elif perk_id == 'bullet_storm':
+            self.perk_storm_chance = min(getattr(self, 'perk_storm_chance', 0.0) + 0.25, 0.75)
 
     # ── Ship image ────────────────────────────────────────────────────────────
     def _build_ship(self) -> pygame.Surface:
@@ -368,6 +374,14 @@ class Player(pygame.sprite.Sprite):
             spread = 18 + i * 12
             add(Bullet(cx - spread, cy, -0.15 * (i + 1), -spd, damage, color, size))
             add(Bullet(cx + spread, cy,  0.15 * (i + 1), -spd, damage, color, size))
+
+        # Bullet storm perk — 25% chance to triple the shot
+        storm_chance = getattr(self, 'perk_storm_chance', 0.0)
+        if storm_chance > 0 and random.random() < storm_chance:
+            for ang in (-14, 14):
+                r = math.radians(ang)
+                add(Bullet(cx, cy, math.sin(r) * spd, -math.cos(r) * spd,
+                           damage, color, size))
 
     # ── Damage / healing ─────────────────────────────────────────────────────
     def take_damage(self, amount: int):
