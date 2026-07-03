@@ -1121,9 +1121,10 @@ class Game:
 
         # Multiplier text (big, pulsing)
         mtxt = font_big.render(mult_str, True, col)
-        mw   = int(mtxt.get_width() * pulse)
-        mh   = int(mtxt.get_height() * pulse)
-        mtxt = pygame.transform.scale(mtxt, (mw, mh))
+        if not IS_ANDROID:
+            mw   = int(mtxt.get_width() * pulse)
+            mh   = int(mtxt.get_height() * pulse)
+            mtxt = pygame.transform.scale(mtxt, (mw, mh))
         mtxt.set_alpha(220)
         surface.blit(mtxt, mtxt.get_rect(center=(cx, cy)))
 

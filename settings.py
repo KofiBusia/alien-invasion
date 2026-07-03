@@ -7,7 +7,7 @@ IS_ANDROID = bool(os.environ.get('ANDROID_ROOT'))
 # ── Screen ────────────────────────────────────────────────────────────────────
 SCREEN_WIDTH  = 1200
 SCREEN_HEIGHT = 800
-FPS   = 60
+FPS   = 30 if IS_ANDROID else 60
 TITLE = "Alien Invasion — Earth's Last Defense"
 
 # ── Colours ───────────────────────────────────────────────────────────────────

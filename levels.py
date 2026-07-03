@@ -1,5 +1,6 @@
 """Level manager: chapter-aware wave spawning with formations."""
 
+import os
 import random
 import pygame
 from settings import (
@@ -8,6 +9,8 @@ from settings import (
     TOTAL_LEVELS, SCREEN_WIDTH, LEVELS_PER_CHAPTER
 )
 from enemy import spawn_enemy
+
+_IS_ANDROID = bool(os.environ.get('ANDROID_ROOT'))
 from boss import Boss
 
 
@@ -32,6 +35,10 @@ class LevelManager:
         self._intro_timer    = 120
         self._formation_cd   = 0
         self._is_chapter_start = False
+        self._wave_font  = pygame.font.SysFont('consolas', 13)
+        self._intro_font_lg = pygame.font.SysFont('consolas', 64, bold=True)
+        self._intro_font_md = pygame.font.SysFont('consolas', 26, bold=True)
+        self._intro_font_sm = pygame.font.SysFont('consolas', 20)
 
     # ── Public ────────────────────────────────────────────────────────────────
     def start_level(self, level: int):
@@ -180,32 +187,41 @@ class LevelManager:
             gc   = tuple(max(0, v-80) for v in chap_col)
 
         # Glow ellipse
-        gw, gh = 700, 140
-        gs = pygame.Surface((gw, gh), pygame.SRCALPHA)
-        pygame.draw.ellipse(gs, (*gc, int(alpha * 0.35)), gs.get_rect())
-        surface.blit(gs, gs.get_rect(center=(cx, cy)))
+        if not _IS_ANDROID:
+            gw, gh = 700, 140
+            gs = pygame.Surface((gw, gh), pygame.SRCALPHA)
+            pygame.draw.ellipse(gs, (*gc, int(alpha * 0.35)), gs.get_rect())
+            surface.blit(gs, gs.get_rect(center=(cx, cy)))
 
         # Main title
-        fsz  = int((64 if self._is_chapter_start else 54) * scale)
-        font = pygame.font.SysFont('consolas', fsz, bold=True)
-        txt  = font.render(msg, True, col)
-        txt.set_alpha(alpha)
-        sh   = font.render(msg, True, (0, 0, 0))
-        sh.set_alpha(alpha // 2)
-        surface.blit(sh, sh.get_rect(center=(cx + 3, cy + 3)))
-        surface.blit(txt, txt.get_rect(center=(cx, cy)))
-
-        # Sub-header
-        sf1 = pygame.font.SysFont('consolas', int(26 * min(1.0, scale + 0.1)), bold=True)
-        st1 = sf1.render(sub, True, (255, 255, 255))
-        st1.set_alpha(int(alpha * 0.9))
-        surface.blit(st1, st1.get_rect(center=(cx, cy + int(55 * min(1.0, scale+0.1)))))
-
-        # Sub-subtitle
-        sf2 = pygame.font.SysFont('consolas', int(20 * min(1.0, scale + 0.15)))
-        st2 = sf2.render(sub2, True, (220, 200, 255))
-        st2.set_alpha(int(alpha * 0.80))
-        surface.blit(st2, st2.get_rect(center=(cx, cy + int(85 * min(1.0, scale+0.1)))))
+        if _IS_ANDROID:
+            font = self._intro_font_lg
+            txt  = font.render(msg, True, col)
+            txt.set_alpha(alpha)
+            surface.blit(txt, txt.get_rect(center=(cx, cy)))
+            st1 = self._intro_font_md.render(sub, True, (255, 255, 255))
+            st1.set_alpha(int(alpha * 0.9))
+            surface.blit(st1, st1.get_rect(center=(cx, cy + 58)))
+            st2 = self._intro_font_sm.render(sub2, True, (220, 200, 255))
+            st2.set_alpha(int(alpha * 0.8))
+            surface.blit(st2, st2.get_rect(center=(cx, cy + 88)))
+        else:
+            fsz  = int((64 if self._is_chapter_start else 54) * scale)
+            font = pygame.font.SysFont('consolas', fsz, bold=True)
+            txt  = font.render(msg, True, col)
+            txt.set_alpha(alpha)
+            sh   = font.render(msg, True, (0, 0, 0))
+            sh.set_alpha(alpha // 2)
+            surface.blit(sh, sh.get_rect(center=(cx + 3, cy + 3)))
+            surface.blit(txt, txt.get_rect(center=(cx, cy)))
+            sf1 = pygame.font.SysFont('consolas', int(26 * min(1.0, scale + 0.1)), bold=True)
+            st1 = sf1.render(sub, True, (255, 255, 255))
+            st1.set_alpha(int(alpha * 0.9))
+            surface.blit(st1, st1.get_rect(center=(cx, cy + int(55 * min(1.0, scale+0.1)))))
+            sf2 = pygame.font.SysFont('consolas', int(20 * min(1.0, scale + 0.15)))
+            st2 = sf2.render(sub2, True, (220, 200, 255))
+            st2.set_alpha(int(alpha * 0.80))
+            surface.blit(st2, st2.get_rect(center=(cx, cy + int(85 * min(1.0, scale+0.1)))))
 
         # Chapter indicator dots (bottom of screen)
         if self._is_chapter_start:
@@ -224,9 +240,12 @@ class LevelManager:
                 else:
                     dcol = (40, 40, 60)
                     dr = 6
-                ts = pygame.Surface((dr*2+4, dr*2+4), pygame.SRCALPHA)
-                pygame.draw.circle(ts, (*dcol, alpha), (dr+2, dr+2), dr)
-                surface.blit(ts, (dx-dr-2, dot_y-dr-2))
+                if _IS_ANDROID:
+                    pygame.draw.circle(surface, dcol, (dx, dot_y), dr)
+                else:
+                    ts = pygame.Surface((dr*2+4, dr*2+4), pygame.SRCALPHA)
+                    pygame.draw.circle(ts, (*dcol, alpha), (dr+2, dr+2), dr)
+                    surface.blit(ts, (dx-dr-2, dot_y-dr-2))
 
     # ── Wave logic ────────────────────────────────────────────────────────────
     def _update_wave(self):
@@ -345,10 +364,9 @@ class LevelManager:
         spawned = sum(self._spawned.values())
         total   = sum(self._totals.values())
         remain  = len(self.game.enemies)
-        font    = pygame.font.SysFont('consolas', 13)
         chapter = self.cfg['chapter']
         ch_lvl  = self.cfg['chapter_level']
-        txt = font.render(
+        txt = self._wave_font.render(
             f'Ch {chapter} · Lv {ch_lvl}  |  Enemies: {remain}  |  Wave: {spawned}/{total}',
             True, (180,180,255))
         surface.blit(txt, (10, 70))

@@ -3,12 +3,14 @@
 import math
 import random
 import pygame
+import os as _os
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WEAPONS, WEAPON_ORDER, TOTAL_LEVELS,
     WHITE, BLACK, GOLD, CYAN, RED, GREEN, BLUE, ORANGE, PURPLE,
     UI_BG, UI_BORDER, UI_TEXT, UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOV,
     UI_SUCCESS, UI_DANGER, ACHIEVEMENTS
 )
+_IS_ANDROID = bool(_os.environ.get('ANDROID_ROOT'))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -233,6 +235,7 @@ class UIManager:
     BTN_GAP = 13
 
     _hud_bottom_cache = None
+    _hud_top_cache    = None
     _menu_bg_cache    = None
     _vignette_cache   = None
 
@@ -295,6 +298,11 @@ class UIManager:
         s = _vgradient(SCREEN_WIDTH, h, (3,5,18), (6,10,28), alpha_top=0, alpha_bot=240)
         pygame.draw.line(s, (0,110,210), (0,0), (SCREEN_WIDTH,0), 2)
         UIManager._hud_bottom_cache = s
+
+        H   = 44
+        top = _vgradient(SCREEN_WIDTH, H, (3,5,20), (5,9,26), alpha_top=195, alpha_bot=225)
+        pygame.draw.line(top, (0,110,210), (0,H-1), (SCREEN_WIDTH,H-1), 1)
+        UIManager._hud_top_cache = top
 
     def _build_vignette(self):
         s = pygame.Surface((SCREEN_WIDTH,SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -433,10 +441,8 @@ class UIManager:
 
     # ── TOP BAR ──────────────────────────────────────────────────────────────
     def _draw_top_bar(self, surface, p, lvl):
-        H  = 44
-        bar= _vgradient(SCREEN_WIDTH, H, (3,5,20),(5,9,26), alpha_top=195, alpha_bot=225)
-        pygame.draw.line(bar, (0,110,210), (0,H-1),(SCREEN_WIDTH,H-1), 1)
-        surface.blit(bar, (0,0))
+        H   = 44
+        surface.blit(UIManager._hud_top_cache, (0, 0))
 
         # Level badge
         lc  = GOLD if lvl >= TOTAL_LEVELS else (90,200,255)
@@ -525,12 +531,13 @@ class UIManager:
 
         # Center dot — full = white flash
         if pct >= 1.0:
-            t = self._tick
-            fa = int(180 + 75*math.sin(t*0.25))
             pygame.draw.circle(surface, (255,255,255), (cx_,cy_), 9)
-            glow = pygame.Surface((R*2,R*2), pygame.SRCALPHA)
-            pygame.draw.circle(glow, (*col,fa), (R,R), R)
-            surface.blit(glow, (cx_-R, cy_-R), special_flags=pygame.BLEND_ADD)
+            if not _IS_ANDROID:
+                t  = self._tick
+                fa = int(180 + 75*math.sin(t*0.25))
+                glow = pygame.Surface((R*2,R*2), pygame.SRCALPHA)
+                pygame.draw.circle(glow, (*col,fa), (R,R), R)
+                surface.blit(glow, (cx_-R, cy_-R), special_flags=pygame.BLEND_ADD)
         else:
             dc = tuple(int(v*0.55) for v in col)
             pygame.draw.circle(surface, dc, (cx_,cy_), 5)
@@ -605,8 +612,12 @@ class UIManager:
         x  = int(SCREEN_WIDTH - W - 14 + (1-slide)*(W+24))
         y  = 52
 
-        s = pygame.Surface((W,H), pygame.SRCALPHA)
-        s.fill((8,28,8,215))
+        if _IS_ANDROID:
+            s = pygame.Surface((W, H))
+            s.fill((8, 28, 8))
+        else:
+            s = pygame.Surface((W, H), pygame.SRCALPHA)
+            s.fill((8, 28, 8, 215))
         pygame.draw.rect(s,(55,195,55),(0,0,W,H),border_radius=11,width=2)
         pygame.draw.rect(s,(28,115,28),(0,0,7,H),border_radius=5)
 
