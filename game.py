@@ -8,7 +8,7 @@ import pygame
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE,
     TOTAL_LEVELS, ACHIEVEMENTS, POWERUP_CONFIGS, get_level_config, GOLD,
-    IS_ANDROID
+    IS_ANDROID, get_chapter, get_chapter_color
 )
 from save_system  import SaveSystem
 from audio        import AudioManager
@@ -532,9 +532,18 @@ class Game:
             self.player_bullets, self.enemies, False, False,
             collided=pygame.sprite.collide_rect)
         for bullet, enemies_hit in hits.items():
+            piercing = getattr(bullet, 'piercing', False)
+            hit_set  = getattr(bullet, '_hit_set', None)
+
             for enemy in enemies_hit:
+                # Ion cannon: skip if already hit this enemy this frame
+                if piercing and hit_set is not None:
+                    eid = id(enemy)
+                    if eid in hit_set:
+                        continue
+                    hit_set.add(eid)
+
                 dmg = bullet.damage
-                # Critical hit
                 is_crit = random.random() < player.crit_chance
                 if is_crit:
                     dmg = int(dmg * 2.0)
@@ -573,11 +582,34 @@ class Game:
                     elif bname == 'RainbowBullet':
                         self.particles.stars_burst(ex, ey, count=30)
                         self.particles.fire_ring(ex, ey, enemy.color, count=20, radius=28)
+                    elif bname == 'IonBullet':
+                        self.particles.hit_sparks(ex, ey, (80, 220, 255), count=14)
+                        self.particles.fire_ring(ex, ey, (80, 200, 255), count=10, radius=18)
+                    elif bname == 'DarkMatterBullet':
+                        # Gravity pull — push all nearby enemies toward kill point
+                        self.particles.shockwave_ring(ex, ey, (110, 0, 210),
+                                                      max_radius=120, speed=6)
+                        self.screen_flash((50, 0, 100), 40)
+                        for near_e in list(self.enemies):
+                            if near_e.alive():
+                                d = math.hypot(near_e.x - ex, near_e.y - ey)
+                                if 0 < d < 140:
+                                    near_e.take_damage(int(bullet.damage * 0.25))
+                    elif bname == 'OmegaBullet':
+                        self.particles.mega_explosion(ex, ey, (255, 235, 0))
+                        self._splash_damage(enemy.x, enemy.y, 180, 80)
+                        self.screen_flash((255, 220, 0), 60)
+                        self._hitstop_frames = max(self._hitstop_frames, 8)
+                    elif bname == 'QuantumBullet':
+                        self.particles.explosion(ex, ey, (255, 60, 220),
+                                                 count=20, speed=5)
+                        self.particles.fire_ring(ex, ey, (200, 0, 255), count=14, radius=22)
                     else:
                         self.particles.fire_ring(ex, ey, enemy.color, count=18, radius=26)
 
-                bullet.kill()
-                break
+                if not piercing:
+                    bullet.kill()
+                    break
 
         # Player bullets vs boss
         for bullet in list(self.player_bullets):
@@ -709,14 +741,18 @@ class Game:
         stats['best_level'] = self.save.get('best_level', 0)
         stats['total_coins'] = self.save.get('total_coins', 0)
         stats['unlocked_weapons'] = self.save.get('unlocked_weapons', ['laser'])
+        best_lvl = stats.get('best_level', 0)
         conditions = {
             'first_kill':    stats.get('kills', 0) >= 1,
             'kills_100':     stats.get('kills', 0) >= 100,
             'boss_slayer':   stats.get('bosses_killed', 0) >= 1,
             'untouchable':   stats.get('perfect_levels', 0) >= 1,
             'coin_collector':stats.get('total_coins', 0) >= 10000,
-            'weapon_master': len(stats.get('unlocked_weapons',[])) >= 7,
-            'earth_defender':stats.get('best_level', 0) >= TOTAL_LEVELS,
+            'weapon_master': len(stats.get('unlocked_weapons',[])) >= 11,
+            'ch2_clear':     best_lvl >= 40,
+            'ch3_clear':     best_lvl >= 60,
+            'ch4_clear':     best_lvl >= 80,
+            'earth_defender':best_lvl >= TOTAL_LEVELS,
         }
         for aid, cond in conditions.items():
             if cond:

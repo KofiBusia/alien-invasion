@@ -8,7 +8,8 @@ from settings import (
     PLAYER_SHIELD, PLAYER_LIVES, PLAYER_INVINCIBILITY_MS, WEAPONS, WEAPON_ORDER,
     IS_ANDROID
 )
-from bullet import Bullet, RainbowBullet, PlasmaBullet, MissileBullet
+from bullet import (Bullet, RainbowBullet, PlasmaBullet, MissileBullet,
+                    IonBullet, QuantumBullet, DarkMatterBullet, OmegaBullet)
 from trails import TrailSystem
 
 
@@ -77,6 +78,11 @@ class Player(pygame.sprite.Sprite):
         self.cd_mult     = max(0.3, 1.0  - lvls.get('fire_rate',     0) * 0.08)
         self.crit_chance = lvls.get('crit_chance', 0) * 0.05
         self.coin_mult   = 1.0           + lvls.get('coin_bonus',    0) * 0.12
+        # New upgrades
+        self.armor_pct        = max(0.2, 1.0 - lvls.get('hull_armor',    0) * 0.08)
+        self.shield_regen_sec = lvls.get('energy_core',   0) * 2
+        self.bullet_spd_mult  = 1.0          + lvls.get('targeting_ai', 0) * 0.08
+        self.overdrive_mult   = 1.0          + lvls.get('overdrive',    0) * 0.10
 
     def refresh_upgrades(self):
         self._apply_upgrades()
@@ -241,9 +247,10 @@ class Player(pygame.sprite.Sprite):
         # Expire effects
         self._effects = {k: v for k, v in self._effects.items() if now < v}
 
-        # Slow shield regen (1 HP per second)
+        # Shield regen: base 1/s + energy_core upgrade
+        regen = 1 + self.shield_regen_sec
         if now % 1000 < 17 and self.shield < self.max_shield:
-            self.shield = min(self.max_shield, self.shield + 1)
+            self.shield = min(self.max_shield, self.shield + regen)
 
         # Update cooldown percentage for HUD arc
         cfg       = WEAPONS.get(self.weapon_key, {})
@@ -263,16 +270,16 @@ class Player(pygame.sprite.Sprite):
         self._last_shot_ms = now
         self._fire(cfg)
         self.game.audio.play(
-            'plasma'  if self.weapon_key == 'plasma'  else
+            'plasma'  if self.weapon_key in ('plasma', 'dark_matter') else
             'missile' if self.weapon_key == 'missile' else 'laser')
         self.game.save.increment_stat('shots_fired')
 
     def _fire(self, cfg):
         dmg    = cfg['damage']
-        spd    = cfg['speed']
+        spd    = cfg['speed'] * self.bullet_spd_mult
         color  = cfg['color'] or (255, 255, 255)
         size   = cfg['size']
-        mult   = self.dmg_mult * (2.0 if self.has_effect('damage_boost') else 1.0)
+        mult   = self.dmg_mult * self.overdrive_mult * (2.0 if self.has_effect('damage_boost') else 1.0)
         if random.random() < self.crit_chance:
             mult *= 2.0
         damage = int(dmg * mult)
@@ -289,6 +296,20 @@ class Player(pygame.sprite.Sprite):
             add(PlasmaBullet(cx, cy, 0, -spd, damage))
         elif self.weapon_key == 'missile':
             add(MissileBullet(cx, cy, -spd, damage, self.game.enemies))
+        elif self.weapon_key == 'ion_cannon':
+            add(IonBullet(cx, cy, 0, -1, damage, spd))
+        elif self.weapon_key == 'quantum_burst':
+            # 8-direction burst
+            for i in range(8):
+                ang = math.radians(i * 45 - 90)
+                add(QuantumBullet(cx, cy,
+                                  math.cos(ang) * spd,
+                                  math.sin(ang) * spd,
+                                  damage))
+        elif self.weapon_key == 'dark_matter':
+            add(DarkMatterBullet(cx, cy, 0, -spd, damage))
+        elif self.weapon_key == 'omega_beam':
+            add(OmegaBullet(cx, cy, 0, -spd, damage))
         elif cfg['pattern'] == 'double':
             for dx in (-cfg['spread']//2, cfg['spread']//2):
                 add(Bullet(cx + dx, cy, 0, -spd, damage, color, size))
@@ -317,6 +338,7 @@ class Player(pygame.sprite.Sprite):
                 self.game.particles.shield_ripple(self.x, self.y, 34)
                 self.game.audio.play('shield')
         if amount > 0:
+            amount = max(1, int(amount * self.armor_pct))
             self.health             -= amount
             self.level_damage_taken += amount
             self.game.particles.hit_sparks(self.x, self.y, (255, 80, 80))

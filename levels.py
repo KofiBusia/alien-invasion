@@ -1,8 +1,12 @@
-"""Level manager: spawning waves with formations, tracking completion."""
+"""Level manager: chapter-aware wave spawning with formations."""
 
 import random
 import pygame
-from settings import get_level_config, TOTAL_LEVELS, SCREEN_WIDTH
+from settings import (
+    get_level_config, get_chapter, get_chapter_level,
+    get_chapter_name, get_chapter_color, get_chapter_subtitle,
+    TOTAL_LEVELS, SCREEN_WIDTH, LEVELS_PER_CHAPTER
+)
 from enemy import spawn_enemy
 from boss import Boss
 
@@ -20,12 +24,14 @@ class LevelManager:
         self.cfg         = get_level_config(1)
         self._phase      = 'intro'
         self._wave_timer = 0.0
-        self._spawned    = {'scout': 0, 'fighter': 0, 'tank': 0}
-        self._totals     = {}
+        self._spawned: dict[str, int] = {}
+        self._totals:  dict[str, int] = {}
+        self._kinds:   list[str]      = []
         self._boss_spawned   = False
         self._complete_timer = 0
         self._intro_timer    = 120
         self._formation_cd   = 0
+        self._is_chapter_start = False
 
     # ── Public ────────────────────────────────────────────────────────────────
     def start_level(self, level: int):
@@ -33,17 +39,17 @@ class LevelManager:
         self.cfg           = get_level_config(level)
         self.game.level_cfg= self.cfg
         self._phase        = 'intro'
-        self._intro_timer  = 90
         self._boss_spawned = False
         self._wave_timer   = 0.0
         self._formation_cd = 0
-        self._spawned      = {'scout': 0, 'fighter': 0, 'tank': 0, 'destroyer': 0}
-        self._totals       = {
-            'scout':     self.cfg['scout_count'],
-            'fighter':   self.cfg['fighter_count'],
-            'tank':      self.cfg['tank_count'],
-            'destroyer': self.cfg['destroyer_count'],
-        }
+
+        self._is_chapter_start = (self.cfg['chapter_level'] == 1 and level > 1)
+        self._intro_timer = 150 if self._is_chapter_start else 90
+
+        self._kinds   = list(self.cfg['enemy_kinds'])
+        enemy_counts  = self.cfg['enemy_counts']
+        self._spawned = {k: 0 for k in enemy_counts}
+        self._totals  = dict(enemy_counts)
 
     def update(self):
         if self._phase == 'intro':
@@ -73,7 +79,8 @@ class LevelManager:
     def wave_done(self) -> bool:
         if self._phase != 'wave':
             return False
-        all_spawned = all(self._spawned[k] >= self._totals[k] for k in self._totals)
+        all_spawned = all(self._spawned.get(k, 0) >= self._totals.get(k, 0)
+                         for k in self._totals)
         return all_spawned and len(self.game.enemies) == 0
 
     @property
@@ -88,6 +95,16 @@ class LevelManager:
         if lvl > save.get('best_level', 0):
             save.set('best_level', lvl)
 
+        # Chapter clear achievements
+        from settings import get_chapter, LEVELS_PER_CHAPTER, get_chapter_name
+        ch = get_chapter(lvl)
+        ch_lvl = self.cfg['chapter_level']
+        if ch_lvl == LEVELS_PER_CHAPTER and ch >= 2:
+            ach_map = {2:'ch2_clear', 3:'ch3_clear', 4:'ch4_clear'}
+            ach = ach_map.get(ch)
+            if ach and save.unlock_achievement(ach):
+                self.game.ui.show_achievement(ach)
+
         if self.game.player.level_damage_taken == 0:
             save.increment_stat('perfect_levels')
             bonus = 200 + lvl * 50
@@ -99,7 +116,6 @@ class LevelManager:
 
         self.game.player.level_damage_taken = 0
 
-        # Wave clear coins bonus
         clear_bonus = 50 + lvl * 20
         self.game.player.coins += clear_bonus
         self.game.ui.show_message(
@@ -113,10 +129,10 @@ class LevelManager:
     def draw_intro(self, surface: pygame.Surface):
         if not self.intro_active:
             return
-        t   = self._intro_timer   # counts DOWN from 90 to 0
-        MAX = 90
-        FADE_IN  = 18
-        FADE_OUT = 22
+        t   = self._intro_timer
+        MAX = 150 if self._is_chapter_start else 90
+        FADE_IN  = 20
+        FADE_OUT = 25
 
         if t > MAX - FADE_IN:
             progress = (MAX - t) / FADE_IN
@@ -127,65 +143,105 @@ class LevelManager:
         if alpha < 4:
             return
 
-        # Scale zooms in from 1.6 → 1.0 during fade-in
         scale = max(1.0, 1.6 - 0.6 * progress)
+        cx    = surface.get_width()  // 2
+        cy    = surface.get_height() // 2
 
-        cx = surface.get_width()  // 2
-        cy = surface.get_height() // 2
+        chapter  = self.cfg['chapter']
+        ch_level = self.cfg['chapter_level']
+        is_boss  = self.cfg['is_boss']
+        chap_col = get_chapter_color(chapter)
 
-        is_boss = self.cfg['is_boss']
-        msg     = f'LEVEL  {self.level}' if not is_boss else '⚠  BOSS  INCOMING  ⚠'
-        col     = (255, 55, 55) if is_boss else (255, 230, 0)
-        gc      = (200, 20, 20) if is_boss else (180, 140, 0)
+        if self._is_chapter_start:
+            # Chapter start screen
+            msg  = f'CHAPTER  {chapter}'
+            sub  = get_chapter_name(chapter)
+            sub2 = get_chapter_subtitle(chapter)
+            col  = chap_col
+            gc   = tuple(max(0, v-60) for v in chap_col)
+        elif is_boss:
+            msg  = '  BOSS  INCOMING  '
+            sub  = f'Chapter {chapter} — Level {ch_level} Boss'
+            sub2 = 'Prepare for battle!'
+            col  = (255, 55, 55)
+            gc   = (160, 10, 10)
+        else:
+            msg  = f'LEVEL  {ch_level}'
+            sub  = f'Chapter {chapter}: {get_chapter_name(chapter)}'
+            total = sum(self._totals.values())
+            destr_kind = self._kinds[3] if len(self._kinds) >= 4 else 'destroyer'
+            destroyers = self._totals.get(destr_kind, 0)
+            if destroyers:
+                sub2 = (f'{total} aliens  ·  {destroyers} '
+                        f'{destr_kind.upper()}{"S" if destroyers>1 else ""}!')
+            else:
+                sub2 = f'{total} alien ships incoming'
+            col  = chap_col
+            gc   = tuple(max(0, v-80) for v in chap_col)
 
-        # Glow ellipse behind text
-        gw, gh = 640, 130
+        # Glow ellipse
+        gw, gh = 700, 140
         gs = pygame.Surface((gw, gh), pygame.SRCALPHA)
-        pygame.draw.ellipse(gs, (*gc, int(alpha * 0.38)), gs.get_rect())
+        pygame.draw.ellipse(gs, (*gc, int(alpha * 0.35)), gs.get_rect())
         surface.blit(gs, gs.get_rect(center=(cx, cy)))
 
         # Main title
-        fsz  = int(54 * scale)
+        fsz  = int((64 if self._is_chapter_start else 54) * scale)
         font = pygame.font.SysFont('consolas', fsz, bold=True)
         txt  = font.render(msg, True, col)
         txt.set_alpha(alpha)
-        # Drop shadow
-        sh = font.render(msg, True, (0, 0, 0))
+        sh   = font.render(msg, True, (0, 0, 0))
         sh.set_alpha(alpha // 2)
         surface.blit(sh, sh.get_rect(center=(cx + 3, cy + 3)))
         surface.blit(txt, txt.get_rect(center=(cx, cy)))
 
-        # Subtitle
-        if is_boss:
-            sub = f'Level {self.level} Boss Battle  —  Good luck!'
-        else:
-            total = sum(self._totals.values())
-            destroyers = self._totals.get('destroyer', 0)
-            if destroyers:
-                sub = f'{total} aliens inbound  ·  {destroyers} DESTROYER{"S" if destroyers>1 else ""}!'
-            else:
-                sub = f'{total} alien ships incoming'
+        # Sub-header
+        sf1 = pygame.font.SysFont('consolas', int(26 * min(1.0, scale + 0.1)), bold=True)
+        st1 = sf1.render(sub, True, (255, 255, 255))
+        st1.set_alpha(int(alpha * 0.9))
+        surface.blit(st1, st1.get_rect(center=(cx, cy + int(55 * min(1.0, scale+0.1)))))
 
-        sub_font = pygame.font.SysFont('consolas', int(22 * min(1.0, scale + 0.15)))
-        stxt     = sub_font.render(sub, True, (225, 205, 255))
-        stxt.set_alpha(int(alpha * 0.88))
-        surface.blit(stxt, stxt.get_rect(center=(cx, cy + int(68 * min(1.0, scale + 0.1)))))
+        # Sub-subtitle
+        sf2 = pygame.font.SysFont('consolas', int(20 * min(1.0, scale + 0.15)))
+        st2 = sf2.render(sub2, True, (220, 200, 255))
+        st2.set_alpha(int(alpha * 0.80))
+        surface.blit(st2, st2.get_rect(center=(cx, cy + int(85 * min(1.0, scale+0.1)))))
+
+        # Chapter indicator dots (bottom of screen)
+        if self._is_chapter_start:
+            from settings import TOTAL_CHAPTERS
+            dot_y = cy + 130
+            dot_spacing = 30
+            total_w = (TOTAL_CHAPTERS - 1) * dot_spacing
+            for i in range(1, TOTAL_CHAPTERS + 1):
+                dx = cx - total_w // 2 + (i-1) * dot_spacing
+                if i < chapter:
+                    dcol = (100, 100, 100)
+                    dr = 7
+                elif i == chapter:
+                    dcol = chap_col
+                    dr = 10
+                else:
+                    dcol = (40, 40, 60)
+                    dr = 6
+                ts = pygame.Surface((dr*2+4, dr*2+4), pygame.SRCALPHA)
+                pygame.draw.circle(ts, (*dcol, alpha), (dr+2, dr+2), dr)
+                surface.blit(ts, (dx-dr-2, dot_y-dr-2))
 
     # ── Wave logic ────────────────────────────────────────────────────────────
     def _update_wave(self):
-        self._wave_timer   += 1
-        self._formation_cd  = max(0, self._formation_cd - 1)
+        self._wave_timer  += 1
+        self._formation_cd = max(0, self._formation_cd - 1)
         rate = self.cfg['spawn_rate'] * 60
 
         if self._wave_timer >= rate:
             self._wave_timer = 0
             self._try_spawn()
 
-        # Occasional formation burst
-        remaining = sum(self._totals[k] - self._spawned[k] for k in self._totals)
+        remaining = sum(self._totals.get(k,0) - self._spawned.get(k,0) for k in self._totals)
         if (self._formation_cd == 0
                 and remaining >= 5
-                and random.random() < 0.004):   # ~once per 250 frames
+                and random.random() < 0.004):
             self._try_formation()
             self._formation_cd = int(rate * 3)
 
@@ -193,27 +249,38 @@ class LevelManager:
             self.complete()
 
     def _try_spawn(self):
-        for kind in ('destroyer', 'tank', 'fighter', 'scout'):
-            if self._spawned[kind] < self._totals[kind]:
-                if kind == 'destroyer' and self._spawned['scout'] < 3: continue
-                if kind == 'tank'      and self._spawned['scout'] < 2: continue
-                if kind == 'fighter'   and self._spawned['scout'] < 1: continue
-                spawn_enemy(self.game, kind)
-                self._spawned[kind] += 1
-                return
+        kinds = self._kinds
+        scout_kind = kinds[0] if kinds else 'scout'
+
+        for kind in reversed(kinds):
+            remaining = self._totals.get(kind, 0) - self._spawned.get(kind, 0)
+            if remaining <= 0:
+                continue
+            idx = kinds.index(kind)
+            scout_spawned = self._spawned.get(scout_kind, 0)
+            if idx == 3 and scout_spawned < 3: continue
+            if idx == 2 and scout_spawned < 2: continue
+            if idx == 1 and scout_spawned < 1: continue
+            spawn_enemy(self.game, kind)
+            self._spawned[kind] = self._spawned.get(kind, 0) + 1
+            return
 
     # ── Formation spawning ────────────────────────────────────────────────────
     def _try_formation(self):
-        scouts_left   = self._totals['scout']   - self._spawned['scout']
-        fighters_left = self._totals['fighter'] - self._spawned['fighter']
+        if not self._kinds:
+            return
+        scout_kind   = self._kinds[0]
+        fighter_kind = self._kinds[1] if len(self._kinds) > 1 else scout_kind
+        scouts_left   = self._totals.get(scout_kind, 0)   - self._spawned.get(scout_kind, 0)
+        fighters_left = self._totals.get(fighter_kind, 0) - self._spawned.get(fighter_kind, 0)
 
         if scouts_left >= 5:
             fmt  = random.choice([_V_FORMATION, _LINE_FORMATION, _ARROW])
-            kind = 'scout'
+            kind = scout_kind
             n    = min(scouts_left, random.choice([5, 7]))
         elif fighters_left >= 4:
             fmt  = random.choice([_LINE_FORMATION, _PINCER])
-            kind = 'fighter'
+            kind = fighter_kind
             n    = min(fighters_left, 4)
         else:
             return
@@ -222,7 +289,7 @@ class LevelManager:
 
     def _spawn_formation(self, kind: str, fmt: str, n: int):
         cx        = SCREEN_WIDTH // 2
-        remaining = self._totals[kind] - self._spawned[kind]
+        remaining = self._totals.get(kind, 0) - self._spawned.get(kind, 0)
         n = min(n, remaining)
         if n <= 0:
             return
@@ -239,15 +306,13 @@ class LevelManager:
         elif fmt == _LINE_FORMATION:
             spacing = max(50, SCREEN_WIDTH // (n + 1))
             for i in range(n):
-                x = spacing * (i + 1)
-                y = -50
-                positions.append((x, y))
+                positions.append((spacing * (i + 1), -50))
 
         elif fmt == _PINCER:
             half = n // 2
             for i in range(half):
-                positions.append((60 + i * 45,             -50 - i * 20))
-                positions.append((SCREEN_WIDTH-60-i*45,    -50 - i * 20))
+                positions.append((60 + i * 45,          -50 - i * 20))
+                positions.append((SCREEN_WIDTH-60-i*45, -50 - i * 20))
             if n % 2 == 1:
                 positions.append((cx, -50))
 
@@ -260,7 +325,7 @@ class LevelManager:
 
         for (x, y) in positions:
             spawn_enemy(self.game, kind, x, y)
-            self._spawned[kind] += 1
+            self._spawned[kind] = self._spawned.get(kind, 0) + 1
 
     # ── Boss logic ────────────────────────────────────────────────────────────
     def _update_boss(self):
@@ -281,5 +346,9 @@ class LevelManager:
         total   = sum(self._totals.values())
         remain  = len(self.game.enemies)
         font    = pygame.font.SysFont('consolas', 13)
-        txt = font.render(f'Enemies: {remain}  |  Wave: {spawned}/{total}', True, (180,180,255))
+        chapter = self.cfg['chapter']
+        ch_lvl  = self.cfg['chapter_level']
+        txt = font.render(
+            f'Ch {chapter} · Lv {ch_lvl}  |  Enemies: {remain}  |  Wave: {spawned}/{total}',
+            True, (180,180,255))
         surface.blit(txt, (10, 70))

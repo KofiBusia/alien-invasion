@@ -10,7 +10,8 @@ import random
 import pygame
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT,
-    UI_BG, UI_BORDER, UI_TEXT, GOLD, WHITE
+    UI_BG, UI_BORDER, UI_TEXT, GOLD, WHITE,
+    get_chapter
 )
 
 
@@ -644,6 +645,381 @@ _ENG_HARD = [
 ]
 
 
+# ── Chapter 2: Science questions ─────────────────────────────────────────────
+
+_SCI_QUESTIONS = [
+    # Physics
+    ("What is the SI unit of force?", "Newton",
+     ["Joule", "Newton", "Pascal", "Watt"], 1),
+    ("What is the speed of light in a vacuum (approx)?", "3 × 10^8 m/s",
+     ["3 × 10^6 m/s", "3 × 10^8 m/s", "3 × 10^10 m/s", "3 × 10^4 m/s"], 1),
+    ("E = mc² — what does 'c' represent?", "Speed of light",
+     ["Speed of sound", "Speed of light", "Energy constant", "Mass constant"], 1),
+    ("Which law states F = ma?", "Newton's Second Law",
+     ["Newton's First Law", "Newton's Second Law", "Newton's Third Law", "Hooke's Law"], 1),
+    ("What type of energy does a moving object have?", "Kinetic energy",
+     ["Potential energy", "Thermal energy", "Kinetic energy", "Chemical energy"], 2),
+    ("What unit measures electrical resistance?", "Ohm",
+     ["Volt", "Ampere", "Ohm", "Watt"], 2),
+    ("Which electromagnetic waves have the shortest wavelength?", "Gamma rays",
+     ["Radio waves", "X-rays", "Ultraviolet", "Gamma rays"], 3),
+    ("What is the formula for pressure?", "Force ÷ Area",
+     ["Mass × Acceleration", "Force ÷ Area", "Work ÷ Time", "Force × Distance"], 1),
+    ("What phenomenon causes a rainbow?", "Refraction and dispersion",
+     ["Reflection only", "Refraction and dispersion", "Diffraction", "Interference"], 1),
+    ("What is absolute zero in Celsius?", "-273 °C",
+     ["-100 °C", "-200 °C", "-273 °C", "-373 °C"], 2),
+    # Chemistry
+    ("What is the chemical symbol for gold?", "Au",
+     ["Go", "Gd", "Au", "Ag"], 2),
+    ("How many elements are in the periodic table?", "118",
+     ["92", "100", "108", "118"], 3),
+    ("What is the chemical formula for water?", "H₂O",
+     ["HO", "H₂O", "H₂O₂", "OH"], 1),
+    ("What type of bond shares electrons?", "Covalent",
+     ["Ionic", "Covalent", "Metallic", "Hydrogen"], 1),
+    ("What is the pH of a neutral solution?", "7",
+     ["0", "5", "7", "14"], 2),
+    ("Which gas makes up about 78% of Earth's atmosphere?", "Nitrogen",
+     ["Oxygen", "Nitrogen", "Carbon dioxide", "Argon"], 1),
+    ("What is the atomic number of carbon?", "6",
+     ["4", "6", "8", "12"], 1),
+    ("What is produced when an acid reacts with a base?", "Salt and water",
+     ["Gas only", "Salt and water", "Oxide and acid", "Metal and gas"], 1),
+    ("Which element has the symbol 'Fe'?", "Iron",
+     ["Fluorine", "Francium", "Iron", "Fermium"], 2),
+    ("What is the process of a liquid turning to gas called?", "Evaporation",
+     ["Condensation", "Sublimation", "Evaporation", "Freezing"], 2),
+    # Biology
+    ("What is the powerhouse of the cell?", "Mitochondria",
+     ["Nucleus", "Ribosome", "Mitochondria", "Vacuole"], 2),
+    ("What molecule carries genetic information?", "DNA",
+     ["RNA", "DNA", "ATP", "Protein"], 1),
+    ("What process do plants use to make food?", "Photosynthesis",
+     ["Respiration", "Photosynthesis", "Transpiration", "Germination"], 1),
+    ("How many chromosomes do humans normally have?", "46",
+     ["23", "44", "46", "48"], 2),
+    ("What is the function of red blood cells?", "Carry oxygen",
+     ["Fight infection", "Carry oxygen", "Clot blood", "Produce hormones"], 1),
+    ("Which organ filters blood in the human body?", "Kidney",
+     ["Liver", "Kidney", "Spleen", "Pancreas"], 1),
+    ("What is the largest organ of the human body?", "Skin",
+     ["Liver", "Brain", "Lungs", "Skin"], 3),
+    ("What is the process where cells divide?", "Mitosis",
+     ["Meiosis", "Mitosis", "Osmosis", "Diffusion"], 1),
+    ("What gas do plants absorb during photosynthesis?", "Carbon dioxide",
+     ["Oxygen", "Nitrogen", "Carbon dioxide", "Hydrogen"], 2),
+    ("Which part of a flower produces pollen?", "Anther",
+     ["Stigma", "Ovary", "Anther", "Sepal"], 2),
+    # Earth Science
+    ("What is the most abundant gas in Earth's atmosphere?", "Nitrogen",
+     ["Oxygen", "Nitrogen", "Carbon dioxide", "Water vapour"], 1),
+    ("What type of rock is formed from cooled lava?", "Igneous",
+     ["Sedimentary", "Metamorphic", "Igneous", "Limestone"], 2),
+    ("How long does Earth take to orbit the Sun?", "365.25 days",
+     ["24 hours", "28 days", "365.25 days", "100 days"], 2),
+    ("What causes day and night on Earth?", "Earth's rotation on its axis",
+     ["Moon's orbit", "Earth's orbit around Sun",
+      "Earth's rotation on its axis", "Sun's rotation"], 2),
+    ("What is the deepest ocean trench on Earth?", "Mariana Trench",
+     ["Puerto Rico Trench", "Mariana Trench", "Tonga Trench", "Java Trench"], 1),
+    ("What is the name of the supercontinent that existed 300M years ago?", "Pangaea",
+     ["Gondwana", "Pangaea", "Laurasia", "Rodinia"], 1),
+    ("What scale measures earthquake magnitude?", "Richter scale",
+     ["Beaufort scale", "Mohs scale", "Richter scale", "Decibel scale"], 2),
+    ("What is the thin solid outer layer of Earth called?", "Crust",
+     ["Mantle", "Core", "Crust", "Lithosphere"], 2),
+    ("What phenomenon causes tides on Earth?", "Moon's gravitational pull",
+     ["Sun's heat", "Earth's rotation", "Moon's gravitational pull", "Wind patterns"], 2),
+    ("Which layer of the atmosphere contains the ozone layer?", "Stratosphere",
+     ["Troposphere", "Stratosphere", "Mesosphere", "Thermosphere"], 1),
+]
+
+
+# ── Chapter 3: History questions ──────────────────────────────────────────────
+
+_HIST_QUESTIONS = [
+    # Ancient history
+    ("In what year did World War II end?", "1945",
+     ["1943", "1944", "1945", "1946"], 2),
+    ("Who was the first Roman Emperor?", "Augustus",
+     ["Julius Caesar", "Augustus", "Nero", "Hadrian"], 1),
+    ("Which ancient wonder was located in Alexandria?", "The Great Lighthouse",
+     ["The Colossus", "Hanging Gardens", "The Great Lighthouse", "The Mausoleum"], 2),
+    ("What civilisation built the pyramids of Giza?", "Ancient Egyptians",
+     ["Ancient Romans", "Ancient Greeks", "Ancient Egyptians", "Mesopotamians"], 2),
+    ("Who was the first emperor of unified China?", "Qin Shi Huang",
+     ["Genghis Khan", "Kublai Khan", "Qin Shi Huang", "Emperor Yao"], 2),
+    ("In which year did the French Revolution begin?", "1789",
+     ["1776", "1789", "1799", "1804"], 1),
+    ("Who wrote 'The Art of War'?", "Sun Tzu",
+     ["Confucius", "Sun Tzu", "Lao Tzu", "Mencius"], 1),
+    ("What was the name of the ship Charles Darwin sailed on?", "HMS Beagle",
+     ["HMS Victory", "Mayflower", "HMS Beagle", "Santa Maria"], 2),
+    ("Which empire was the largest contiguous land empire in history?", "Mongol Empire",
+     ["Roman Empire", "British Empire", "Mongol Empire", "Ottoman Empire"], 2),
+    ("In which year did the Berlin Wall fall?", "1989",
+     ["1985", "1987", "1989", "1991"], 2),
+    # Medieval & Renaissance
+    ("What were the Crusades?", "Religious military campaigns to the Holy Land",
+     ["Trade routes to Asia", "Religious military campaigns to the Holy Land",
+      "Viking raids on Europe", "Roman border wars"], 1),
+    ("Who was known as 'The Maid of Orléans'?", "Joan of Arc",
+     ["Eleanor of Aquitaine", "Joan of Arc", "Mary Queen of Scots", "Isabella of Castile"], 1),
+    ("When did the Black Death peak in Europe?", "1347–1351",
+     ["1066–1100", "1200–1250", "1347–1351", "1500–1550"], 2),
+    ("What language did Isaac Newton write his Principia in?", "Latin",
+     ["English", "French", "German", "Latin"], 3),
+    ("What invention did Gutenberg introduce to Europe?", "The printing press",
+     ["The compass", "The printing press", "Gunpowder", "The telescope"], 1),
+    ("Which king signed the Magna Carta in 1215?", "King John",
+     ["King Richard I", "King Henry II", "King John", "King Edward I"], 2),
+    ("Who painted the Sistine Chapel ceiling?", "Michelangelo",
+     ["Leonardo da Vinci", "Raphael", "Michelangelo", "Botticelli"], 2),
+    ("Which explorer first reached India by sea around Africa?", "Vasco da Gama",
+     ["Christopher Columbus", "Ferdinand Magellan", "Vasco da Gama", "Amerigo Vespucci"], 2),
+    # Modern history
+    ("Who was the first President of the United States?", "George Washington",
+     ["John Adams", "Thomas Jefferson", "George Washington", "Benjamin Franklin"], 2),
+    ("What event triggered World War I?", "Assassination of Archduke Franz Ferdinand",
+     ["Invasion of Poland", "Sinking of the Lusitania",
+      "Assassination of Archduke Franz Ferdinand", "German invasion of France"], 2),
+    ("What was the name of the Soviet Union's space programme that put the first human in space?", "Vostok",
+     ["Soyuz", "Vostok", "Mir", "Salyut"], 1),
+    ("Who was the first woman to win a Nobel Prize?", "Marie Curie",
+     ["Florence Nightingale", "Marie Curie", "Rosalind Franklin", "Emmy Noether"], 1),
+    ("In which year did India gain independence from Britain?", "1947",
+     ["1945", "1947", "1950", "1952"], 1),
+    ("Who led the Cuban Revolution?", "Fidel Castro",
+     ["Che Guevara", "Fidel Castro", "Fulgencio Batista", "Raúl Castro"], 1),
+    ("What was the Marshall Plan?", "US aid to rebuild post-war Europe",
+     ["A Cold War military alliance", "US aid to rebuild post-war Europe",
+      "A nuclear arms treaty", "A trade embargo on USSR"], 1),
+    ("When did the Cold War officially end?", "1991",
+     ["1985", "1989", "1991", "1993"], 2),
+    ("What ship sank on its maiden voyage in 1912?", "RMS Titanic",
+     ["SS Lusitania", "RMS Titanic", "SS Britannic", "SS Normandie"], 1),
+    ("Who delivered the 'I Have a Dream' speech?", "Martin Luther King Jr.",
+     ["Malcolm X", "Nelson Mandela", "Martin Luther King Jr.", "Thurgood Marshall"], 2),
+    ("What was the Holocaust?", "The systematic genocide of Jewish people by the Nazis",
+     ["A WWI battle", "The systematic genocide of Jewish people by the Nazis",
+      "Soviet gulags in Siberia", "Atomic bombing of Japan"], 1),
+    ("In which year was the United Nations founded?", "1945",
+     ["1919", "1939", "1945", "1948"], 2),
+    ("Who was the first person to walk on the Moon?", "Neil Armstrong",
+     ["Buzz Aldrin", "Yuri Gagarin", "Neil Armstrong", "Alan Shepard"], 2),
+    ("What was the name of Nelson Mandela's political party?", "African National Congress",
+     ["Pan Africanist Congress", "African National Congress",
+      "Inkatha Freedom Party", "Democratic Alliance"], 1),
+    ("Which war was fought between North and South Korea (starting 1950)?", "Korean War",
+     ["Vietnam War", "Korean War", "Cold War", "Gulf War"], 1),
+    ("What does 'D-Day' refer to?", "Allied invasion of Normandy, June 6 1944",
+     ["Germany's invasion of Poland", "Allied invasion of Normandy, June 6 1944",
+      "Japan's attack on Pearl Harbor", "VE Day celebration"], 1),
+    ("Who was the first female Prime Minister of the UK?", "Margaret Thatcher",
+     ["Teresa May", "Margaret Thatcher", "Barbara Castle", "Shirley Williams"], 1),
+    ("The Silk Road connected China to which region?", "Mediterranean / Middle East",
+     ["Africa only", "Mediterranean / Middle East", "South America", "Australia"], 1),
+    ("What year did the Soviet Union launch Sputnik 1?", "1957",
+     ["1955", "1957", "1961", "1963"], 1),
+    ("Who was known as 'The Iron Chancellor' of Germany?", "Otto von Bismarck",
+     ["Frederick the Great", "Otto von Bismarck", "Kaiser Wilhelm II", "Hindenburg"], 1),
+    ("The Rwandan Genocide occurred in which year?", "1994",
+     ["1990", "1992", "1994", "1996"], 2),
+]
+
+
+# ── Chapter 4: Geography questions ───────────────────────────────────────────
+
+_GEO_QUESTIONS = [
+    # Capitals
+    ("What is the capital of Australia?", "Canberra",
+     ["Sydney", "Melbourne", "Canberra", "Brisbane"], 2),
+    ("What is the capital of Canada?", "Ottawa",
+     ["Toronto", "Montreal", "Vancouver", "Ottawa"], 3),
+    ("What is the capital of Brazil?", "Brasília",
+     ["São Paulo", "Rio de Janeiro", "Brasília", "Salvador"], 2),
+    ("What is the capital of Japan?", "Tokyo",
+     ["Osaka", "Kyoto", "Hiroshima", "Tokyo"], 3),
+    ("What is the capital of South Africa?", "Pretoria",
+     ["Cape Town", "Johannesburg", "Pretoria", "Durban"], 2),
+    ("What is the capital of Argentina?", "Buenos Aires",
+     ["Montevideo", "Santiago", "Buenos Aires", "Lima"], 2),
+    ("What is the capital of Egypt?", "Cairo",
+     ["Alexandria", "Luxor", "Cairo", "Giza"], 2),
+    ("What is the capital of India?", "New Delhi",
+     ["Mumbai", "Kolkata", "New Delhi", "Chennai"], 2),
+    ("What is the capital of Russia?", "Moscow",
+     ["St Petersburg", "Kiev", "Moscow", "Novosibirsk"], 2),
+    ("What is the capital of Germany?", "Berlin",
+     ["Munich", "Hamburg", "Frankfurt", "Berlin"], 3),
+    # Rivers & Mountains
+    ("What is the longest river in the world?", "Nile",
+     ["Amazon", "Nile", "Yangtze", "Mississippi"], 1),
+    ("What is the highest mountain in the world?", "Mount Everest",
+     ["K2", "Mount Everest", "Kangchenjunga", "Makalu"], 1),
+    ("In which country is the Amazon rainforest primarily located?", "Brazil",
+     ["Colombia", "Peru", "Brazil", "Venezuela"], 2),
+    ("What is the largest desert in the world?", "Antarctic Desert",
+     ["Sahara", "Arabian Desert", "Gobi Desert", "Antarctic Desert"], 3),
+    ("Which river flows through Egypt?", "Nile",
+     ["Congo", "Niger", "Nile", "Zambezi"], 2),
+    ("What is the longest mountain range in the world?", "Andes",
+     ["Himalayas", "Rockies", "Andes", "Alps"], 2),
+    ("What is the deepest lake in the world?", "Lake Baikal",
+     ["Lake Superior", "Caspian Sea", "Lake Baikal", "Lake Tanganyika"], 2),
+    ("What is the largest ocean on Earth?", "Pacific Ocean",
+     ["Atlantic Ocean", "Indian Ocean", "Pacific Ocean", "Arctic Ocean"], 2),
+    # Countries & Continents
+    ("How many continents are there on Earth?", "7",
+     ["5", "6", "7", "8"], 2),
+    ("What is the largest country in the world by area?", "Russia",
+     ["China", "Canada", "USA", "Russia"], 3),
+    ("What is the smallest country in the world?", "Vatican City",
+     ["Monaco", "San Marino", "Liechtenstein", "Vatican City"], 3),
+    ("Which continent has the most countries?", "Africa",
+     ["Asia", "Europe", "Africa", "Americas"], 2),
+    ("Which is the most populous country in the world?", "India",
+     ["China", "India", "USA", "Indonesia"], 1),
+    ("What is the national language of Brazil?", "Portuguese",
+     ["Spanish", "Portuguese", "English", "French"], 1),
+    ("Which country has the most natural lakes?", "Canada",
+     ["Russia", "Finland", "USA", "Canada"], 3),
+    ("What country does the Sahara desert NOT pass through?", "Kenya",
+     ["Algeria", "Libya", "Mali", "Kenya"], 3),
+    ("Which ocean lies between Europe and North America?", "Atlantic Ocean",
+     ["Pacific Ocean", "Indian Ocean", "Atlantic Ocean", "Arctic Ocean"], 2),
+    ("In which continent is the Sahara Desert?", "Africa",
+     ["Asia", "Australia", "Africa", "South America"], 2),
+    ("What is the capital of China?", "Beijing",
+     ["Shanghai", "Guangzhou", "Hong Kong", "Beijing"], 3),
+    # Human Geography
+    ("What is the most spoken language in the world (by native speakers)?", "Mandarin Chinese",
+     ["English", "Spanish", "Mandarin Chinese", "Hindi"], 2),
+    ("What is the International Date Line closest to?", "180° longitude",
+     ["0° longitude", "90° longitude", "180° longitude", "45° longitude"], 2),
+    ("What is the term for the imaginary line dividing Earth into North/South halves?", "Equator",
+     ["Prime Meridian", "Tropic of Cancer", "Equator", "Arctic Circle"], 2),
+    ("Which country has the most time zones?", "France",
+     ["Russia", "USA", "France", "China"], 2),
+    ("What is the name of the strait between Spain and Morocco?", "Strait of Gibraltar",
+     ["Strait of Messina", "Strait of Gibraltar", "Strait of Hormuz", "Strait of Malacca"], 1),
+    ("What is the world's largest island?", "Greenland",
+     ["Australia", "Greenland", "Borneo", "Madagascar"], 1),
+    ("What country has the most pyramids in the world?", "Sudan",
+     ["Egypt", "Mexico", "Sudan", "Peru"], 2),
+    ("Which country is both in Europe and Asia?", "Russia",
+     ["Turkey", "Kazakhstan", "Russia", "Azerbaijan"], 2),
+    ("What is the name of the world's largest coral reef system?", "Great Barrier Reef",
+     ["Belize Barrier Reef", "Great Barrier Reef", "Mesoamerican Reef", "Red Sea Reef"], 1),
+    ("What is the capital of Turkey?", "Ankara",
+     ["Istanbul", "Izmir", "Ankara", "Bursa"], 2),
+    ("The Nile Delta empties into which body of water?", "Mediterranean Sea",
+     ["Red Sea", "Mediterranean Sea", "Arabian Sea", "Atlantic Ocean"], 1),
+]
+
+
+# ── Chapter 5: Space & Technology questions ───────────────────────────────────
+
+_SPACE_QUESTIONS = [
+    # Solar System
+    ("How many planets are in our solar system?", "8",
+     ["7", "8", "9", "10"], 1),
+    ("What is the largest planet in our solar system?", "Jupiter",
+     ["Saturn", "Jupiter", "Neptune", "Uranus"], 1),
+    ("What is the smallest planet in our solar system?", "Mercury",
+     ["Mars", "Mercury", "Venus", "Pluto"], 1),
+    ("How far is the Moon from Earth (approximately)?", "384,400 km",
+     ["38,400 km", "384,400 km", "3,844,000 km", "38,440 km"], 1),
+    ("What is the name of Earth's natural satellite?", "The Moon",
+     ["Europa", "Titan", "The Moon", "Phobos"], 2),
+    ("How many moons does Mars have?", "2",
+     ["0", "1", "2", "4"], 2),
+    ("What is the Great Red Spot on Jupiter?", "A massive storm",
+     ["A volcano", "A massive storm", "A crater", "An ocean"], 1),
+    ("Which planet has the most moons?", "Saturn",
+     ["Jupiter", "Saturn", "Uranus", "Neptune"], 1),
+    ("What is the Asteroid Belt located between?", "Mars and Jupiter",
+     ["Earth and Mars", "Mars and Jupiter", "Jupiter and Saturn", "Saturn and Uranus"], 1),
+    ("How long does light from the Sun take to reach Earth?", "About 8 minutes",
+     ["About 1 second", "About 8 minutes", "About 1 hour", "About 8 hours"], 1),
+    # Stars & Universe
+    ("What type of star is our Sun?", "Yellow dwarf",
+     ["Red giant", "White dwarf", "Yellow dwarf", "Neutron star"], 2),
+    ("What is a light-year?", "The distance light travels in one year",
+     ["How long light lasts", "The speed of light", "The distance light travels in one year", "A unit of time"], 2),
+    ("What is the name of our galaxy?", "Milky Way",
+     ["Andromeda", "Milky Way", "Triangulum", "Centaurus A"], 1),
+    ("What is a black hole?", "A region where gravity is so strong nothing can escape",
+     ["A dark planet", "An exploded star", "A region where gravity is so strong nothing can escape", "A wormhole"], 2),
+    ("What is a supernova?", "The explosion of a massive star",
+     ["A new star forming", "The explosion of a massive star", "A comet impact", "A galaxy collision"], 1),
+    ("What is the Big Bang theory?", "The universe began from a hot, dense state ~13.8 billion years ago",
+     ["The universe is infinite and unchanging", "The universe began from a hot, dense state ~13.8 billion years ago",
+      "Stars explode to create new universes", "The Milky Way was formed by a collision"], 1),
+    ("What is a neutron star?", "The collapsed core of a massive star",
+     ["A young star like the Sun", "The collapsed core of a massive star",
+      "A star without a nucleus", "A failed star that never ignited"], 1),
+    ("What are pulsars?", "Rapidly rotating neutron stars emitting radio waves",
+     ["Black holes that pulse", "Rapidly rotating neutron stars emitting radio waves",
+      "Bright variable stars", "Dwarf galaxies"], 1),
+    ("What is the Hubble Space Telescope named after?", "Edwin Hubble",
+     ["George Hubble", "Edwin Hubble", "Walter Hubble", "James Hubble"], 1),
+    ("What is the approximate age of the universe?", "13.8 billion years",
+     ["4.5 billion years", "10 billion years", "13.8 billion years", "20 billion years"], 2),
+    # Space Exploration
+    ("Who was the first human in space?", "Yuri Gagarin",
+     ["Neil Armstrong", "Alan Shepard", "Yuri Gagarin", "Buzz Aldrin"], 2),
+    ("In which year did humans first land on the Moon?", "1969",
+     ["1965", "1967", "1969", "1971"], 2),
+    ("What is the International Space Station?", "A habitable satellite orbiting Earth",
+     ["A lunar base", "A habitable satellite orbiting Earth",
+      "A space telescope", "A Mars rover"], 1),
+    ("What is the name of NASA's most famous Mars rover (launched 2012)?", "Curiosity",
+     ["Opportunity", "Spirit", "Curiosity", "Perseverance"], 2),
+    ("What was the name of the first artificial satellite launched (1957)?", "Sputnik 1",
+     ["Explorer 1", "Sputnik 1", "Vanguard 1", "Luna 1"], 1),
+    ("Which spacecraft first left the solar system?", "Voyager 1",
+     ["Pioneer 10", "Voyager 1", "New Horizons", "Cassini"], 1),
+    ("What does NASA stand for?", "National Aeronautics and Space Administration",
+     ["National Air and Space Agency", "National Aeronautics and Space Administration",
+      "North American Space Association", "National Astronomy and Satellite Administration"], 1),
+    ("What is the Hubble constant?", "The rate of expansion of the universe",
+     ["The gravitational constant", "The speed of light in a vacuum",
+      "The rate of expansion of the universe", "The age of the universe"], 2),
+    ("What phenomenon was confirmed by LIGO in 2015?", "Gravitational waves",
+     ["Black holes exist", "Dark matter particles", "Gravitational waves", "Parallel universes"], 2),
+    # Technology
+    ("Who invented the World Wide Web?", "Tim Berners-Lee",
+     ["Bill Gates", "Steve Jobs", "Tim Berners-Lee", "Vint Cerf"], 2),
+    ("What does 'AI' stand for?", "Artificial Intelligence",
+     ["Automated Interface", "Artificial Intelligence", "Advanced Internet", "Algorithmic Innovation"], 1),
+    ("What is Moore's Law?", "Transistor count on chips doubles roughly every two years",
+     ["Internet speed doubles every year",
+      "Transistor count on chips doubles roughly every two years",
+      "Computer costs halve every decade",
+      "Processing speed triples every five years"], 1),
+    ("What does 'DNA computing' use?", "DNA molecules to perform calculations",
+     ["Computer chips shaped like DNA", "DNA molecules to perform calculations",
+      "Biological neural networks", "Quantum entanglement"], 1),
+    ("Which programming language was created by Guido van Rossum?", "Python",
+     ["Java", "C++", "Python", "Ruby"], 2),
+    ("What is quantum computing's key advantage?", "Can process many states simultaneously",
+     ["Faster clock speed", "Smaller physical size",
+      "Can process many states simultaneously", "Uses less electricity"], 2),
+    ("What is the binary representation of the decimal number 10?", "1010",
+     ["1001", "1010", "1100", "1011"], 1),
+    ("What does 'GPU' stand for?", "Graphics Processing Unit",
+     ["General Processing Unit", "Graphics Processing Unit",
+      "Global Processing Utility", "Graphical Program Utility"], 1),
+    ("What year was the first iPhone released?", "2007",
+     ["2005", "2007", "2009", "2011"], 1),
+    ("What is machine learning?", "Systems that learn from data without explicit programming",
+     ["Robots that repair themselves", "Systems that learn from data without explicit programming",
+      "AI that mimics human movement", "Computers that design other computers"], 1),
+]
+
+
 def _make_english_question(level: int) -> tuple:
     """Pick from easy/medium/hard bank based on level."""
     if level <= 6:
@@ -692,7 +1068,19 @@ class QuizManager:
         return self._fonts[key]
 
     def start(self, level: int):
-        self._subject    = random.choice(['math', 'math', 'english'])
+        chapter = get_chapter(level)
+
+        # Each chapter has its own subject pool
+        _CHAPTER_SUBJECTS = {
+            1: ['math', 'math', 'english'],
+            2: ['science', 'science', 'math'],
+            3: ['history', 'history', 'english'],
+            4: ['geography', 'geography', 'science'],
+            5: ['space', 'space', 'history'],
+        }
+        pool = _CHAPTER_SUBJECTS.get(chapter, ['math', 'english'])
+        self._subject = random.choice(pool)
+
         self._timer      = 0
         self._answered   = False
         self._chosen_idx = -1
@@ -704,9 +1092,25 @@ class QuizManager:
         if self._subject == 'math':
             self._question, self._answer, self._choices, self._correct_idx = \
                 _make_math_question(level)
-        else:
+        elif self._subject == 'english':
             self._question, self._answer, self._choices, self._correct_idx = \
                 _make_english_question(level)
+        elif self._subject == 'science':
+            q = random.choice(_SCI_QUESTIONS)
+            self._question, self._answer, self._choices, self._correct_idx = \
+                q[0], q[1], list(q[2]), q[3]
+        elif self._subject == 'history':
+            q = random.choice(_HIST_QUESTIONS)
+            self._question, self._answer, self._choices, self._correct_idx = \
+                q[0], q[1], list(q[2]), q[3]
+        elif self._subject == 'geography':
+            q = random.choice(_GEO_QUESTIONS)
+            self._question, self._answer, self._choices, self._correct_idx = \
+                q[0], q[1], list(q[2]), q[3]
+        else:  # space
+            q = random.choice(_SPACE_QUESTIONS)
+            self._question, self._answer, self._choices, self._correct_idx = \
+                q[0], q[1], list(q[2]), q[3]
 
         # Build static background once
         if QuizManager._space_bg is None:
@@ -795,8 +1199,15 @@ class QuizManager:
             pygame.draw.lines(surface, c, False, pts, 2)
 
         # ── Subject badge ─────────────────────────────────────────────────────
-        subj_col  = (50, 180, 255) if self._subject == 'math' else (80, 220, 100)
-        subj_text = '  MATHEMATICS  ' if self._subject == 'math' else '  ENGLISH  '
+        _SUBJ_MAP = {
+            'math':      ((50, 180, 255),  '  MATHEMATICS  '),
+            'english':   ((80, 220, 100),  '  ENGLISH  '),
+            'science':   ((0,  220, 200),  '  SCIENCE  '),
+            'history':   ((255, 160, 50),  '  HISTORY  '),
+            'geography': ((100, 220, 80),  '  GEOGRAPHY  '),
+            'space':     ((180, 80, 255),  '  SPACE & TECH  '),
+        }
+        subj_col, subj_text = _SUBJ_MAP.get(self._subject, ((50, 180, 255), '  QUIZ  '))
         sb        = self._font('lg').render(subj_text, True, (8, 8, 28))
         sb_rect   = sb.get_rect(centerx=SCREEN_WIDTH//2, top=34)
         pygame.draw.rect(surface, subj_col, sb_rect.inflate(22,12), border_radius=9)
