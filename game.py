@@ -993,7 +993,7 @@ class Game:
         for _ in range(n_coins):
             cx = ast.x + random.uniform(-25, 25)
             cy = ast.y + random.uniform(-25, 25)
-            c  = Coin(self, cx, cy)
+            c  = Coin(cx, cy)
             self.coins_group.add(c)
             self.all_sprites.add(c)
         # Score
