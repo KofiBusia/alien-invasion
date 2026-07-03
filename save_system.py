@@ -36,6 +36,7 @@ DEFAULT_SAVE = {
         "overdrive":     0,
     },
     "achievements":      [],
+    "unlocked_allies":   [],
     "unlocked_trails":   [],
     "active_trail":      None,
     "stats": {

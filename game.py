@@ -10,21 +10,24 @@ from settings import (
     TOTAL_LEVELS, ACHIEVEMENTS, POWERUP_CONFIGS, get_level_config, GOLD,
     IS_ANDROID, get_chapter, get_chapter_color
 )
-from save_system  import SaveSystem
-from audio        import AudioManager
-from particles    import ParticleSystem
-from background   import Background
-from player       import Player
-from levels       import LevelManager
-from shop         import Shop
-from ui           import UIManager
-from quiz         import QuizManager
+from save_system    import SaveSystem
+from audio          import AudioManager
+from particles      import ParticleSystem
+from background     import Background
+from player         import Player
+from levels         import LevelManager
+from shop           import Shop
+from ui             import UIManager
+from quiz           import QuizManager
+from ally           import Ally, AllyBullet, ALLY_CONFIGS, ALLY_ORDER
+from ultimate_boss  import UltimateBoss
 
 
 STATES = frozenset([
     'MAIN_MENU', 'PLAYING', 'PAUSED', 'SHOP',
     'GAME_OVER', 'VICTORY', 'QUIZ',
     'SETTINGS', 'HIGH_SCORES', 'HOW_TO_PLAY',
+    'ULTIMATE_BOSS',
 ])
 
 _BACK = {
@@ -62,6 +65,12 @@ class Game:
         self.enemy_bullets = pygame.sprite.Group()
         self.powerups      = pygame.sprite.Group()
         self.coins_group   = pygame.sprite.Group()
+        self.allies        = pygame.sprite.Group()
+        self.ally_bullets  = pygame.sprite.Group()
+
+        # Ultimate boss state
+        self._ub_spawned        = False
+        self._ub_complete_timer = 0
 
         self.player        = None
         self.level_manager = None
@@ -165,16 +174,22 @@ class Game:
             self._finalize_run()
             self.audio.stop_music()
             self.audio.play('victory')
+        elif new_state == 'ULTIMATE_BOSS':
+            pass   # handled by _start_ultimate_boss directly
 
     # ── Game start / reset ────────────────────────────────────────────────────
     def start_new_game(self, level: int = 1):
         self._clear_sprites()
-        self.current_level = level
-        self.level_cfg     = get_level_config(level)
+        self.current_level  = level
+        self.level_cfg      = get_level_config(level)
+        self._ub_spawned    = False
+        self._ub_complete_timer = 0
 
         self.player = Player(self)
         self.player_group.add(self.player)
         self.all_sprites.add(self.player)
+
+        self._spawn_allies()
 
         self.level_manager = LevelManager(self)
         self.level_manager.start_level(level)
@@ -190,12 +205,45 @@ class Game:
     def _next_level(self):
         self.current_level += 1
         if self.current_level > TOTAL_LEVELS:
-            self.change_state('VICTORY')
+            self._start_ultimate_boss()
             return
         self._clear_enemies_and_bullets()
+        self._spawn_allies()
         self.level_cfg = get_level_config(self.current_level)
         self.level_manager.start_level(self.current_level)
         self.change_state('PLAYING')
+
+    def _spawn_allies(self):
+        """Spawn all purchased ally ships for the current level."""
+        # Clear any existing allies first
+        for a in list(self.allies):
+            a.kill()
+        unlocked = self.save.get('unlocked_allies', [])
+        for key in ALLY_ORDER:
+            if key in unlocked:
+                slot = ALLY_ORDER.index(key)
+                a    = Ally(self, key, slot)
+                self.allies.add(a)
+                self.all_sprites.add(a)
+
+    def _start_ultimate_boss(self):
+        """Trigger the ultimate boss battle after level 100."""
+        self._clear_enemies_and_bullets()
+        self._spawn_allies()
+        self._ub_spawned        = True
+        self._ub_complete_timer = 0
+        boss = UltimateBoss(self)
+        self.boss_group.add(boss)
+        self.all_sprites.add(boss)
+        self._state = 'ULTIMATE_BOSS'
+        self.audio.stop_music()
+        self.audio.play_music('bg')
+        # Announce the final battle
+        self.screen_flash((150, 0, 255), 120)
+        self.particles.shake(15)
+        self.ui.show_message(
+            'FINAL BATTLE', SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120,
+            (255, 0, 255), 'xl')
 
     def _clear_sprites(self):
         self.all_sprites.empty()
@@ -206,10 +254,13 @@ class Game:
         self.enemy_bullets.empty()
         self.powerups.empty()
         self.coins_group.empty()
+        self.allies.empty()
+        self.ally_bullets.empty()
 
     def _clear_enemies_and_bullets(self):
         for grp in (self.enemies, self.boss_group, self.player_bullets,
-                    self.enemy_bullets, self.powerups, self.coins_group):
+                    self.enemy_bullets, self.powerups, self.coins_group,
+                    self.allies, self.ally_bullets):
             for s in list(grp):
                 s.kill()
 
@@ -243,7 +294,7 @@ class Game:
 
             if self._state == 'MAIN_MENU':
                 self._handle_main_menu_event(event)
-            elif self._state == 'PLAYING':
+            elif self._state in ('PLAYING', 'ULTIMATE_BOSS'):
                 self._handle_playing_event(event)
             elif self._state == 'PAUSED':
                 self._handle_pause_event(event)
@@ -410,12 +461,13 @@ class Game:
             self._mouse_firing = False
 
     def _handle_pause_event(self, event):
+        resume = self._prev_state if self._prev_state in ('PLAYING', 'ULTIMATE_BOSS') else 'PLAYING'
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_p):
-            self.change_state('PLAYING')
+            self.change_state(resume)
             return
         label = self.ui.handle_pause(event)
         if label == 'RESUME':
-            self.change_state('PLAYING')
+            self.change_state(resume)
         elif label == 'SETTINGS':
             self._settings_origin = 'PAUSED'
             self.ui.ensure_secondary_menus()
@@ -464,6 +516,8 @@ class Game:
 
         if self._state == 'PLAYING':
             self._update_playing()
+        elif self._state == 'ULTIMATE_BOSS':
+            self._update_ultimate_boss()
         elif self._state == 'QUIZ':
             self.quiz.update()
             if self.quiz.done:
@@ -497,6 +551,38 @@ class Game:
         if self._combo_timer == 0 and self._combo > 0:
             self._combo      = 0
             self._combo_mult = 1.0
+
+    def _update_ultimate_boss(self):
+        if self._hitstop_frames > 0:
+            self._hitstop_frames -= 1
+            self.particles.update()
+            self.background.update()
+            return
+        self.all_sprites.update()
+        self._handle_collisions()
+        self._handle_coin_magnet()
+        self._check_achievements()
+
+        # Decay combo
+        if self._combo_timer > 0:
+            self._combo_timer -= 1
+            if self._combo_timer == 0 and self._combo >= 3:
+                self.ui.show_message(
+                    f'COMBO x{self._combo} ENDED',
+                    SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
+                    (255, 200, 50), 'md')
+        if self._combo_timer == 0 and self._combo > 0:
+            self._combo      = 0
+            self._combo_mult = 1.0
+
+        # Victory check — boss is dead
+        if self._ub_spawned and len(self.boss_group) == 0:
+            self._ub_complete_timer += 1
+            if self._ub_complete_timer >= 200:
+                self._ub_spawned = False
+                self.save.unlock_achievement('ultimate_slayer')
+                self.save.unlock_achievement('earth_defender')
+                self.change_state('VICTORY')
 
     # ── Combo ─────────────────────────────────────────────────────────────────
     def _on_kill(self, enemy):
@@ -679,6 +765,49 @@ class Game:
                 self.audio.play('powerup')
                 pu.kill()
 
+        # Ally bullets vs enemies
+        hits = pygame.sprite.groupcollide(
+            self.ally_bullets, self.enemies, True, False,
+            collided=pygame.sprite.collide_rect)
+        for bullet, enemies_hit in hits.items():
+            for enemy in enemies_hit:
+                killed = enemy.take_damage(bullet.damage)
+                self.particles.hit_sparks(
+                    bullet.rect.centerx, bullet.rect.centery, bullet.color, count=6)
+                if killed:
+                    self._on_kill(enemy)
+                    self.ui._kill_flash = 22
+                break
+
+        # Ally bullets vs boss
+        for bullet in list(self.ally_bullets):
+            for boss in list(self.boss_group):
+                if bullet.rect.colliderect(boss.rect):
+                    killed = boss.take_damage(bullet.damage)
+                    self.particles.hit_sparks(
+                        bullet.rect.centerx, bullet.rect.centery, bullet.color, count=6)
+                    bullet.kill()
+                    if killed:
+                        self._on_kill(boss)
+                    break
+
+        # Enemy bullets vs allies
+        for bullet in list(self.enemy_bullets):
+            for ally in list(self.allies):
+                if bullet.rect.colliderect(ally.rect):
+                    ally.take_damage(bullet.damage)
+                    self.particles.hit_sparks(
+                        bullet.rect.centerx, bullet.rect.centery, (255, 80, 80), count=5)
+                    bullet.kill()
+                    break
+
+        # Enemy contact with allies
+        for enemy in list(self.enemies):
+            for ally in list(self.allies):
+                if enemy.rect.colliderect(ally.rect):
+                    ally.take_damage(enemy.damage // 2)
+                    break
+
         # Player collecting coins
         for coin in list(self.coins_group):
             if coin.rect.colliderect(player.rect):
@@ -752,7 +881,8 @@ class Game:
             'ch2_clear':     best_lvl >= 40,
             'ch3_clear':     best_lvl >= 60,
             'ch4_clear':     best_lvl >= 80,
-            'earth_defender':best_lvl >= TOTAL_LEVELS,
+            'earth_defender':  best_lvl >= TOTAL_LEVELS,
+            'ultimate_slayer': 'ultimate_slayer' in self.save.get('achievements', []),
         }
         for aid, cond in conditions.items():
             if cond:
@@ -816,7 +946,7 @@ class Game:
     def _draw(self):
         ox, oy = self.particles.offset
 
-        if self._state == 'PLAYING' or self._state == 'PAUSED':
+        if self._state in ('PLAYING', 'PAUSED', 'ULTIMATE_BOSS'):
             self._draw_game_world(ox, oy)
         elif self._state == 'QUIZ':
             self.quiz.draw(self.screen)
@@ -893,6 +1023,15 @@ class Game:
             boss.draw_hud(self.screen)
             boss.draw_rage_aura(target)
 
+        # Allies + health bars
+        for ally in self.allies:
+            target.blit(ally.image, (ally.rect.x + ox, ally.rect.y + oy))
+            ally.draw_health_bar(target)
+
+        # Ally bullets
+        for b in self.ally_bullets:
+            target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
+
         # Player
         if self.player:
             self.player.draw(target)
@@ -921,8 +1060,10 @@ class Game:
         # On-screen touch / mouse controls
         self._draw_onscreen_controls(self.screen)
 
-        # Wave progress
-        if self.level_manager:
+        # Wave progress / ULTIMATE_BOSS ally counter
+        if self._state == 'ULTIMATE_BOSS':
+            self._draw_ub_ally_hud(self.screen)
+        elif self.level_manager:
             self.level_manager.draw_intro(self.screen)
 
         # Screen flash overlay
@@ -986,6 +1127,24 @@ class Game:
         bar_y = cy + 44
         pygame.draw.rect(surface, (60, 60, 60),  (bar_x, bar_y, bar_w, bar_h), border_radius=2)
         pygame.draw.rect(surface, col,            (bar_x, bar_y, int(bar_w * ratio), bar_h), border_radius=2)
+
+    def _draw_ub_ally_hud(self, surface: pygame.Surface):
+        """Show active ally ships during the final boss battle."""
+        if not self.allies:
+            return
+        font = pygame.font.SysFont('consolas', 14, bold=True)
+        x, y = 10, SCREEN_HEIGHT - 90
+        for ally in self.allies:
+            cfg = ALLY_CONFIGS.get(ally.ally_type, {})
+            col = cfg.get('color', (0, 200, 100))
+            name = cfg.get('name', ally.ally_type)
+            ratio = max(0.0, ally.health / ally.max_health)
+            # Mini HP bar
+            pygame.draw.rect(surface, (40, 0, 0),   (x, y, 90, 8))
+            pygame.draw.rect(surface, col,           (x, y, int(90 * ratio), 8))
+            txt = font.render(name, True, col)
+            surface.blit(txt, (x, y + 10))
+            x += 110
 
     # ── Pre-render control surfaces (called once in __init__) ─────────────────
     def _build_ctrl_surfs(self):

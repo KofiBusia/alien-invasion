@@ -397,7 +397,8 @@ ACHIEVEMENTS = {
     'ch2_clear':      ('Deep Space Veteran', 'Clear Chapter 2'),
     'ch3_clear':      ('Nebula Walker',      'Clear Chapter 3'),
     'ch4_clear':      ('Dark Matter Lord',   'Clear Chapter 4'),
-    'earth_defender': ('Saviour of Earth',   'Complete all 5 chapters'),
+    'earth_defender':  ('Saviour of Earth',    'Complete all 5 chapters'),
+    'ultimate_slayer': ('Omega Nemesis',       'Defeat the ultimate final boss'),
 }
 
 # ── Visual FX ─────────────────────────────────────────────────────────────────

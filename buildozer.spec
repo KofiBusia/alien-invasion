@@ -6,7 +6,7 @@ package.domain = org.manuel
 source.dir = .
 source.include_exts = py,json
 
-version = 1.5
+version = 1.6
 
 p4a.bootstrap = sdl2
 

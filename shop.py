@@ -1,4 +1,4 @@
-"""Between-level upgrade shop — three tabs: Upgrades · Weapons · Trails."""
+"""Between-level upgrade shop — four tabs: Upgrades · Weapons · Trails · Allies."""
 
 import math
 import pygame
@@ -8,6 +8,7 @@ from settings import (
     UI_BUTTON, UI_BUTTON_HOV, UI_SUCCESS, UI_DANGER
 )
 from trails import TRAIL_CATALOGUE, _hsv
+from ally import ALLY_CONFIGS, ALLY_ORDER
 
 
 def _upgrade_cost(upgrade: dict, current_level: int) -> int:
@@ -52,6 +53,7 @@ class Shop:
         self._font_xs  = pygame.font.SysFont('consolas', 12)
         self._items    : list[ShopItem] = []
         self._tab      = 'upgrades'
+        self._ally_tab_pulse = 0
         self._tab_rects: dict[str, pygame.Rect] = {}
         self._notify   = ''
         self._notify_t = 0
@@ -159,6 +161,28 @@ class Shop:
                 item.can_afford = (not item.owned) and coins >= trail['cost']
                 self._items.append(item)
 
+        elif self._tab == 'allies':
+            unlocked_a = self.game.save.get('unlocked_allies', [])
+            for idx, key in enumerate(ALLY_ORDER):
+                cfg = ALLY_CONFIGS[key]
+                col = idx % cols;  row = idx // cols
+                x   = start_x + col * (item_w + margin)
+                y   = start_y + row * (item_h + margin)
+                # Wrap ally config to match ShopItem expectations
+                ally_data = {
+                    'id':         key,
+                    'name':       cfg['name'],
+                    'desc':       cfg['desc'],
+                    'cost':       cfg['cost'],
+                    'color':      cfg['color'],
+                    'description': cfg['desc'],
+                }
+                item = ShopItem(
+                    pygame.Rect(x, y, item_w, item_h), ally_data, 0, coins, is_weapon=True)
+                item.owned      = key in unlocked_a
+                item.can_afford = (not item.owned) and coins >= cfg['cost']
+                self._items.append(item)
+
         self._continue_rect = pygame.Rect(
             SCREEN_WIDTH // 2 - 135, SCREEN_HEIGHT - self.FOOTER_H + 10, 270, 48)
 
@@ -168,14 +192,32 @@ class Shop:
 
         if item.is_weapon:
             idx = self._items.index(item)
-            key = WEAPON_ORDER[idx]
-            if save.spend_coins(item.cost):
-                save.unlock_weapon(key)
-                self.game.player.unlocked_weapons = list(save.get('unlocked_weapons'))
-                self.game.audio.play('powerup')
-                self._notify = f'Weapon unlocked: {item.data["name"]}!'
-                self._notify_t = 140
-                self._rebuild_items()
+            if self._tab == 'allies':
+                key = ALLY_ORDER[idx]
+                if save.spend_coins(item.cost):
+                    allies = save.data.setdefault('unlocked_allies', [])
+                    if key not in allies:
+                        allies.append(key)
+                    self.game.audio.play('powerup')
+                    self._notify = f'Ally recruited: {item.data["name"]}!'
+                    self._notify_t = 140
+                    # Spawn the ally immediately if in a game
+                    if self.game.player:
+                        from ally import Ally
+                        slot = ALLY_ORDER.index(key)
+                        a    = Ally(self.game, key, slot)
+                        self.game.allies.add(a)
+                        self.game.all_sprites.add(a)
+                    self._rebuild_items()
+            else:
+                key = WEAPON_ORDER[idx]
+                if save.spend_coins(item.cost):
+                    save.unlock_weapon(key)
+                    self.game.player.unlocked_weapons = list(save.get('unlocked_weapons'))
+                    self.game.audio.play('powerup')
+                    self._notify = f'Weapon unlocked: {item.data["name"]}!'
+                    self._notify_t = 140
+                    self._rebuild_items()
 
         elif item.is_trail:
             tid = item.data['id']
@@ -241,8 +283,9 @@ class Shop:
         surface.blit(ltxt, ltxt.get_rect(centerx=SCREEN_WIDTH // 2, y=84))
 
     def _draw_tabs(self, surface: pygame.Surface):
-        tabs  = [('upgrades', 'Ship Upgrades'), ('weapons', 'Weapons'), ('trails', 'Trails')]
-        tw    = 183
+        tabs  = [('upgrades', 'Upgrades'), ('weapons', 'Weapons'),
+                 ('trails', 'Trails'), ('allies', 'Allies')]
+        tw    = 162
         gap   = 8
         total = len(tabs) * tw + (len(tabs) - 1) * gap
         tx    = (SCREEN_WIDTH - total) // 2
@@ -252,19 +295,35 @@ class Shop:
         for name, label in tabs:
             r      = pygame.Rect(tx, ty, tw, 40)
             active = (name == self._tab)
-            bg_col = (48, 85, 155) if active else (18, 28, 58)
-            bd_col = (100, 155, 255) if active else (45, 65, 115)
+
+            if name == 'allies' and not active:
+                bg_col = (40, 15, 65)
+                bd_col = (120, 50, 200)
+            else:
+                bg_col = (48, 85, 155) if active else (18, 28, 58)
+                bd_col = (100, 155, 255) if active else (45, 65, 115)
+
             pygame.draw.rect(surface, bg_col, r, border_radius=7)
             pygame.draw.rect(surface, bd_col, r, border_radius=7, width=2)
-            tc = (220, 220, 255) if active else (100, 115, 175)
+
+            if name == 'allies' and not active:
+                tc = (200, 130, 255)
+            else:
+                tc = (220, 220, 255) if active else (100, 115, 175)
             txt = self._font_md.render(label, True, tc)
             surface.blit(txt, txt.get_rect(center=r.center))
 
+            # Badge hints
             if name == 'trails':
                 owned_count = len(self.game.save.get('unlocked_trails', []))
                 if owned_count < len(TRAIL_CATALOGUE):
                     badge = self._font_xs.render('BUY', True, (255, 220, 40))
                     surface.blit(badge, (r.right - 32, r.top + 5))
+            elif name == 'allies':
+                owned_a = len(self.game.save.get('unlocked_allies', []))
+                if owned_a < len(ALLY_ORDER):
+                    badge = self._font_xs.render('NEW', True, (180, 80, 255))
+                    surface.blit(badge, (r.right - 34, r.top + 5))
 
             self._tab_rects[name] = r
             tx += tw + gap
