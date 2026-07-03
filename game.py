@@ -554,10 +554,25 @@ class Game:
                     base_score = int(enemy.score_val * self._combo_mult)
                     player.score += base_score - enemy.score_val
                     self._on_kill(enemy)
-                    self.ui._kill_flash = 22     # flash kill counter in HUD
-                    self.particles.fire_ring(
-                        int(enemy.x), int(enemy.y),
-                        enemy.color, count=18, radius=26)
+                    self.ui._kill_flash = 22
+                    bname = type(bullet).__name__
+                    ex, ey = int(enemy.x), int(enemy.y)
+                    if bname == 'MissileBullet':
+                        self.particles.mega_explosion(ex, ey, (255, 140, 0))
+                        self._splash_damage(enemy.x, enemy.y, 130, 50)
+                        self._hitstop_frames = max(self._hitstop_frames, 6)
+                    elif bname == 'PlasmaBullet':
+                        self.particles.shockwave_ring(ex, ey, (200, 0, 255),
+                                                      max_radius=100, speed=7)
+                        self.particles.explosion(ex, ey, (180, 0, 255),
+                                                 count=30, speed=6, size=6)
+                        self.screen_flash((60, 0, 130), 35)
+                        self._splash_damage(enemy.x, enemy.y, 85, 30)
+                    elif bname == 'RainbowBullet':
+                        self.particles.stars_burst(ex, ey, count=30)
+                        self.particles.fire_ring(ex, ey, enemy.color, count=20, radius=28)
+                    else:
+                        self.particles.fire_ring(ex, ey, enemy.color, count=18, radius=26)
 
                 bullet.kill()
                 break
@@ -666,6 +681,23 @@ class Game:
         self.ui.show_message('BOMB!', SCREEN_WIDTH//2, SCREEN_HEIGHT//2,
                              (255,50,150), 'xl')
 
+    def _splash_damage(self, x: float, y: float, radius: float, dmg: int):
+        """Area damage after a kill — creates spectacular chain reactions."""
+        for enemy in list(self.enemies):
+            if not enemy.alive():
+                continue
+            dist = math.hypot(enemy.x - x, enemy.y - y)
+            if 0 < dist < radius:
+                falloff = max(0.2, 1.0 - dist / radius)
+                splash  = int(dmg * falloff)
+                if splash > 0:
+                    killed = enemy.take_damage(splash)
+                    self.particles.damage_number(int(enemy.x), int(enemy.y) - 12,
+                                                 splash, 'normal')
+                    if killed:
+                        self._on_kill(enemy)
+                        self.ui._kill_flash = 22
+
     def _process_bomb_effect(self):
         pass
 
@@ -720,11 +752,25 @@ class Game:
             else:
                 pygame.draw.circle(gs, (40, 0, 0), (bx, by), 70)
 
+        # Destroyer enemy — purple core glow
+        for e in self.enemies:
+            if getattr(e, 'KIND', '') == 'destroyer':
+                ex, ey = int(e.x), int(e.y)
+                t2 = math.sin(pygame.time.get_ticks() * 0.009) * 0.5 + 0.5
+                r2 = int(30 + t2 * 20)
+                pygame.draw.circle(gs, (r2, 0, 80), (ex, ey), 55)
+                pygame.draw.circle(gs, (50, 0, 120), (ex, ey), 30)
+
         # Player thruster glow
         if self.player:
             px, py = int(self.player.x), int(self.player.y) + 28
             pygame.draw.circle(gs, (20, 60, 200), (px, py), 24)
             pygame.draw.circle(gs, (60, 140, 255), (px, py), 10)
+            # Extra glow when speed boost or damage boost active
+            if self.player.has_effect('speed_boost'):
+                pygame.draw.circle(gs, (0, 40, 80), (px, py), 40)
+            if self.player.has_effect('damage_boost'):
+                pygame.draw.circle(gs, (60, 20, 0), (int(self.player.x), int(self.player.y)), 36)
 
         target.blit(gs, (0, 0), special_flags=pygame.BLEND_ADD)
 

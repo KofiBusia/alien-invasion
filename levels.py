@@ -37,11 +37,12 @@ class LevelManager:
         self._boss_spawned = False
         self._wave_timer   = 0.0
         self._formation_cd = 0
-        self._spawned      = {'scout': 0, 'fighter': 0, 'tank': 0}
+        self._spawned      = {'scout': 0, 'fighter': 0, 'tank': 0, 'destroyer': 0}
         self._totals       = {
-            'scout':   self.cfg['scout_count'],
-            'fighter': self.cfg['fighter_count'],
-            'tank':    self.cfg['tank_count'],
+            'scout':     self.cfg['scout_count'],
+            'fighter':   self.cfg['fighter_count'],
+            'tank':      self.cfg['tank_count'],
+            'destroyer': self.cfg['destroyer_count'],
         }
 
     def update(self):
@@ -112,24 +113,63 @@ class LevelManager:
     def draw_intro(self, surface: pygame.Surface):
         if not self.intro_active:
             return
-        alpha = min(255, self._intro_timer * 8)
-        font  = pygame.font.SysFont('consolas', 48, bold=True)
-        msg   = f'LEVEL {self.level}' if not self.cfg['is_boss'] else '⚠ BOSS INCOMING ⚠'
-        col   = (255, 50, 50) if self.cfg['is_boss'] else (255, 220, 0)
-        txt   = font.render(msg, True, col)
-        txt.set_alpha(alpha)
-        surface.blit(txt, txt.get_rect(center=(surface.get_width()//2, surface.get_height()//2)))
+        t   = self._intro_timer   # counts DOWN from 90 to 0
+        MAX = 90
+        FADE_IN  = 18
+        FADE_OUT = 22
 
-        sub_font = pygame.font.SysFont('consolas', 22)
-        if self.cfg['is_boss']:
-            sub = f'Level {self.level} Boss Battle!'
+        if t > MAX - FADE_IN:
+            progress = (MAX - t) / FADE_IN
+        else:
+            progress = 1.0
+        fade_out = t / FADE_OUT if t < FADE_OUT else 1.0
+        alpha    = int(255 * progress * fade_out)
+        if alpha < 4:
+            return
+
+        # Scale zooms in from 1.6 → 1.0 during fade-in
+        scale = max(1.0, 1.6 - 0.6 * progress)
+
+        cx = surface.get_width()  // 2
+        cy = surface.get_height() // 2
+
+        is_boss = self.cfg['is_boss']
+        msg     = f'LEVEL  {self.level}' if not is_boss else '⚠  BOSS  INCOMING  ⚠'
+        col     = (255, 55, 55) if is_boss else (255, 230, 0)
+        gc      = (200, 20, 20) if is_boss else (180, 140, 0)
+
+        # Glow ellipse behind text
+        gw, gh = 640, 130
+        gs = pygame.Surface((gw, gh), pygame.SRCALPHA)
+        pygame.draw.ellipse(gs, (*gc, int(alpha * 0.38)), gs.get_rect())
+        surface.blit(gs, gs.get_rect(center=(cx, cy)))
+
+        # Main title
+        fsz  = int(54 * scale)
+        font = pygame.font.SysFont('consolas', fsz, bold=True)
+        txt  = font.render(msg, True, col)
+        txt.set_alpha(alpha)
+        # Drop shadow
+        sh = font.render(msg, True, (0, 0, 0))
+        sh.set_alpha(alpha // 2)
+        surface.blit(sh, sh.get_rect(center=(cx + 3, cy + 3)))
+        surface.blit(txt, txt.get_rect(center=(cx, cy)))
+
+        # Subtitle
+        if is_boss:
+            sub = f'Level {self.level} Boss Battle  —  Good luck!'
         else:
             total = sum(self._totals.values())
-            sub   = f'{total} aliens incoming — good luck!'
-        stxt = sub_font.render(sub, True, (220, 200, 255))
-        stxt.set_alpha(alpha)
-        surface.blit(stxt, stxt.get_rect(center=(surface.get_width()//2,
-                                                  surface.get_height()//2 + 55)))
+            destroyers = self._totals.get('destroyer', 0)
+            if destroyers:
+                sub = f'{total} aliens inbound  ·  {destroyers} DESTROYER{"S" if destroyers>1 else ""}!'
+            else:
+                sub = f'{total} alien ships incoming'
+
+        sub_font = pygame.font.SysFont('consolas', int(22 * min(1.0, scale + 0.15)))
+        stxt     = sub_font.render(sub, True, (225, 205, 255))
+        stxt.set_alpha(int(alpha * 0.88))
+        surface.blit(stxt, stxt.get_rect(center=(cx, cy + int(68 * min(1.0, scale + 0.1)))))
 
     # ── Wave logic ────────────────────────────────────────────────────────────
     def _update_wave(self):
@@ -153,10 +193,11 @@ class LevelManager:
             self.complete()
 
     def _try_spawn(self):
-        for kind in ('tank', 'fighter', 'scout'):
+        for kind in ('destroyer', 'tank', 'fighter', 'scout'):
             if self._spawned[kind] < self._totals[kind]:
-                if kind == 'tank'    and self._spawned['scout'] < 2: continue
-                if kind == 'fighter' and self._spawned['scout'] < 1: continue
+                if kind == 'destroyer' and self._spawned['scout'] < 3: continue
+                if kind == 'tank'      and self._spawned['scout'] < 2: continue
+                if kind == 'fighter'   and self._spawned['scout'] < 1: continue
                 spawn_enemy(self.game, kind)
                 self._spawned[kind] += 1
                 return

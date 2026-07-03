@@ -118,6 +118,12 @@ ENEMY_CONFIGS = {
         'shoot_cd': 3200, 'bullet_dmg': 20, 'bullet_spd': 5,
         'color': (180, 0, 60),   'size': (58, 62), 'pattern': 'slow',
     },
+    'destroyer': {
+        'name': 'Destroyer', 'health': 420, 'speed': 0.45, 'damage': 38,
+        'score': 480, 'coins': 65,  'can_shoot': True,
+        'shoot_cd': 2200, 'bullet_dmg': 30, 'bullet_spd': 6,
+        'color': (70, 0, 210),   'size': (74, 82), 'pattern': 'slow',
+    },
 }
 
 # ── Power-ups ─────────────────────────────────────────────────────────────────
@@ -154,6 +160,7 @@ def get_level_config(level: int) -> dict:
         'scout_count':        min(int(3 + level * 1.5), 20),
         'fighter_count':      min(int(max(0, level - 2) * 1.0), 12),
         'tank_count':         min(int(max(0, level - 4) * 0.5), 8),
+        'destroyer_count':    min(int(max(0, level - 8) * 0.5), 5),
         'spawn_rate':         max(0.4, 2.5 - level * 0.09),
         'speed_mult':         m,
         'health_mult':        m,
@@ -166,7 +173,7 @@ def get_level_config(level: int) -> dict:
 TOTAL_LEVELS = 20
 
 # ── Visual FX ─────────────────────────────────────────────────────────────────
-MAX_PARTICLES       = 800
+MAX_PARTICLES       = 1000
 EXPLOSION_PARTICLES = 38
 HIT_PARTICLES       = 8
 STAR_COUNT          = 160

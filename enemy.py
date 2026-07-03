@@ -143,17 +143,19 @@ class Enemy(pygame.sprite.Sprite):
     def _die(self):
         if self._dying:
             return
-        # Brief spin-out animation before destroying
         self._dying       = True
         self._dying_timer = 8
         px, py = int(self.x), int(self.y)
-        self.game.particles.explosion(px, py, self.color, count=22, speed=5)
-        self.game.particles.shockwave_ring(px, py, self.color, max_radius=55, speed=4)
-        self.game.particles.shake(5)
+        self._death_effect(px, py)
         self.game.audio.play('explosion')
         self._drop_loot()
         self.game.player.score += self.score_val
         self.game.save.increment_stat('kills')
+
+    def _death_effect(self, px: int, py: int):
+        self.game.particles.explosion(px, py, self.color, count=22, speed=5)
+        self.game.particles.shockwave_ring(px, py, self.color, max_radius=55, speed=4)
+        self.game.particles.shake(5)
 
     def _finish_die(self):
         self.kill()
@@ -186,6 +188,12 @@ class Enemy(pygame.sprite.Sprite):
 class Scout(Enemy):
     KIND = 'scout'
 
+    def _death_effect(self, px: int, py: int):
+        self.game.particles.explosion(px, py, self.color, count=16, speed=4)
+        self.game.particles.fire_ring(px, py, self.color, count=14, radius=22)
+        self.game.particles.smoke_puff(px, py, count=8)
+        self.game.particles.shake(4)
+
 
 class Fighter(Enemy):
     KIND = 'fighter'
@@ -195,6 +203,11 @@ class Fighter(Enemy):
         self._dodge_cd    = random.randint(60, 120)
         self._dodge_dir   = 0
         self._dodge_timer = 0
+        # Dive-bomb charge
+        self._dive_cd    = random.randint(220, 420)
+        self._diving     = False
+        self._dive_vx    = 0.0
+        self._dive_vy    = 0.0
 
     def _build_image(self):
         w, h = self.size
@@ -213,7 +226,38 @@ class Fighter(Enemy):
         return s
 
     def _move(self):
+        # Dive-bomb: charge straight at player at high speed
+        if self._diving:
+            self.x += self._dive_vx
+            self.y += self._dive_vy
+            self._dive_cd = max(0, self._dive_cd - 1)
+            if self._dive_cd == 0:
+                self._diving  = False
+                self._dive_cd = random.randint(300, 500)
+            return
+
         self.y += self.speed
+
+        # Countdown to next dive
+        self._dive_cd = max(0, self._dive_cd - 1)
+        if self._dive_cd == 0:
+            px, py = self.game.player.x, self.game.player.y
+            if self.y < py - 40:   # only dive when above player
+                dx = px - self.x
+                dy = py - self.y
+                d  = math.hypot(dx, dy) or 1
+                spd = self.speed * 6.5
+                self._dive_vx = dx / d * spd
+                self._dive_vy = dy / d * spd
+                self._diving  = True
+                self._dive_cd = 48
+                self.game.particles.hit_sparks(int(self.x), int(self.y),
+                                               self.color, count=10)
+                self.game.particles.shockwave_ring(int(self.x), int(self.y),
+                                                   self.color, max_radius=32, speed=4)
+            else:
+                self._dive_cd = random.randint(120, 260)
+            return
 
         # Dodge: scan for nearby player bullets
         self._dodge_cd    = max(0, self._dodge_cd - 1)
@@ -224,7 +268,6 @@ class Fighter(Enemy):
                 dx = b.rect.centerx - self.x
                 dy = b.rect.centery - self.y
                 if abs(dy) < 120 and abs(dx) < 50:
-                    # Bullet is coming toward us — dodge sideways
                     self._dodge_dir   = -1 if dx > 0 else 1
                     self._dodge_timer = 25
                     self._dodge_cd    = 90
@@ -239,9 +282,25 @@ class Fighter(Enemy):
                 self._zig_timer  = 0
             self.x = max(30, min(SCREEN_WIDTH-30, self.x + self._zig_dir * self.speed * 0.8))
 
+    def _death_effect(self, px: int, py: int):
+        self.game.particles.explosion(px, py, self.color, count=30, speed=7)
+        self.game.particles.fire_ring(px, py, self.color, count=18, radius=32)
+        self.game.particles.shockwave_ring(px, py, self.color, max_radius=75, speed=5)
+        self.game.particles.smoke_puff(px, py, count=12)
+        self.game.particles.shake(6)
+
 
 class Tank(Enemy):
     KIND = 'tank'
+
+    def _death_effect(self, px: int, py: int):
+        self.game.particles.explosion(px, py, self.color, count=44, speed=8, size=7)
+        self.game.particles.fire_ring(px, py, self.color, count=22, radius=44)
+        self.game.particles.shockwave_ring(px, py, self.color, max_radius=110, speed=6)
+        self.game.particles.debris_burst(px, py, self.color, count=18)
+        self.game.particles.smoke_puff(px, py, count=20)
+        self.game.particles.shake(14)
+        self.game.screen_flash(self.color, 35)
 
     def _build_image(self):
         w, h = self.size
@@ -269,10 +328,90 @@ class Tank(Enemy):
         self.game.all_sprites.add(b)
 
 
+class Destroyer(Enemy):
+    """Massive warship — slow, tanky, twin explosive cannons."""
+    KIND = 'destroyer'
+
+    def _build_image(self) -> pygame.Surface:
+        w, h = self.size
+        s = pygame.Surface((w, h), pygame.SRCALPHA)
+        c = self.color
+        dim   = tuple(max(0,  v - 50) for v in c)
+        br    = tuple(min(255, v + 90) for v in c)
+        glow  = (min(255, c[0]+40), min(255, c[1]+30), 255)
+
+        # Main hull — wide hexagonal body
+        pts = [(w//2, 0), (w-4, h//5), (w, h*2//3),
+               (w*2//3, h), (w//3, h), (0, h*2//3), (4, h//5)]
+        pygame.draw.polygon(s, c, pts)
+        pygame.draw.polygon(s, br, pts, 2)
+
+        # Armour ridge
+        ridge = [(w//2, 8), (w//2+14, h//3), (w//2+9, h*2//3-8),
+                 (w//2, h-12), (w//2-9, h*2//3-8), (w//2-14, h//3)]
+        pygame.draw.polygon(s, dim, ridge)
+        pygame.draw.polygon(s, br, ridge, 1)
+
+        # Heavy side turrets
+        for tx in (6, w - 18):
+            pygame.draw.rect(s, dim, (tx, h//3+2, 12, 30), border_radius=3)
+            pygame.draw.rect(s, br,  (tx+1, h//3+3, 10, 28), border_radius=2, width=1)
+            # Cannon barrel
+            bx = tx + 6
+            pygame.draw.rect(s, (200, 80, 255), (bx-3, h//3+28, 6, 14), border_radius=2)
+            pygame.draw.circle(s, glow, (bx, h//3+42), 5)
+
+        # Central reactor core
+        pygame.draw.ellipse(s, (70, 0, 180, 190),  (w//2-14, 12, 28, 36))
+        pygame.draw.ellipse(s, (150, 0, 255, 220),  (w//2-10, 16, 20, 26))
+        pygame.draw.ellipse(s, (220, 100, 255, 255),(w//2-6,  20, 12, 16))
+        pygame.draw.ellipse(s, (255, 255, 255),      (w//2-3,  24,  6,  8))
+
+        # Engine pods
+        for ex in (w//4, w//2, w*3//4):
+            pygame.draw.ellipse(s, dim,              (ex-7, h-12, 14, 12))
+            pygame.draw.ellipse(s, (120, 0, 255, 150),(ex-5, h-10, 10, 10))
+
+        return s
+
+    def _move(self):
+        self.y += self.speed
+        # Slowly drift toward player's x
+        px  = self.game.player.x
+        dx  = px - self.x
+        self.x += min(abs(dx), 0.55) * (1 if dx > 0 else -1)
+        self.x = max(55, min(SCREEN_WIDTH - 55, self.x))
+
+    def _fire(self):
+        px, py = self.game.player.x, self.game.player.y
+        dx, dy = px - self.x, py - self.y
+        d = math.hypot(dx, dy) or 1
+        for ox in (-18, 18):
+            b = EnemyBullet(
+                int(self.x) + ox, int(self.y) + self.rect.height // 2,
+                dx / d * self.bullet_spd, dy / d * self.bullet_spd,
+                self.bullet_dmg, explosive=True)
+            self.game.enemy_bullets.add(b)
+            self.game.all_sprites.add(b)
+        self.game.particles.hit_sparks(int(self.x), int(self.y) + self.rect.height // 2,
+                                       self.color, count=12)
+
+    def _death_effect(self, px: int, py: int):
+        self.game.particles.mega_explosion(px, py, self.color)
+        self.game.particles.shake(22)
+        self.game.screen_flash((100, 0, 255), 70)
+        for _ in range(4):
+            ox = random.randint(-70, 70)
+            oy = random.randint(-60, 60)
+            self.game.particles.spawn_lightning(px, py, px + ox, py + oy, (180, 80, 255))
+            self.game.particles.explosion(px + ox//2, py + oy//2,
+                                          self.color, count=18, speed=5)
+
+
 def spawn_enemy(game, kind: str, x: float = None, y: float = -40) -> Enemy:
     if x is None:
         x = random.uniform(40, SCREEN_WIDTH - 40)
-    classes = {'scout': Scout, 'fighter': Fighter, 'tank': Tank}
+    classes = {'scout': Scout, 'fighter': Fighter, 'tank': Tank, 'destroyer': Destroyer}
     cls = classes.get(kind, Scout)
     e   = cls(game, x, y, level=game.current_level)
     game.enemies.add(e)

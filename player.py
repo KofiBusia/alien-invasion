@@ -378,19 +378,44 @@ class Player(pygame.sprite.Sprite):
 
         surface.blit(self.image, self.rect)
 
-        # Invincibility aura
+        # Invincibility — rotating dual-hex shield
         if self.has_effect('invincibility'):
             t   = pygame.time.get_ticks()
-            a   = int(128 + 100 * math.sin(t * 0.008))
-            r   = self.rect.inflate(18, 18)
-            s   = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
-            pygame.draw.ellipse(s, (200, 0, 255, a), s.get_rect(), 3)
-            surface.blit(s, r.topleft)
+            a   = int(160 + 80 * math.sin(t * 0.009))
+            ang = t * 0.0028
+            cx, cy = int(self.x), int(self.y)
+            R   = 42
+            # Outer hex (slow clockwise)
+            pts_out = []
+            for i in range(6):
+                θ = ang + i * math.tau / 6
+                pts_out.append((cx + int(R * math.cos(θ)), cy + int(R * math.sin(θ))))
+            os_ = pygame.Surface((R*2+8, R*2+8), pygame.SRCALPHA)
+            lp  = [(p[0]-cx+R+4, p[1]-cy+R+4) for p in pts_out]
+            pygame.draw.polygon(os_, (200, 0, 255, a), lp, 3)
+            surface.blit(os_, (cx-R-4, cy-R-4))
+            # Inner hex (counter-rotating, smaller)
+            pts_in = []
+            Ri = 26
+            for i in range(6):
+                θ = -ang * 1.6 + i * math.tau / 6
+                pts_in.append((cx + int(Ri * math.cos(θ)), cy + int(Ri * math.sin(θ))))
+            is_ = pygame.Surface((Ri*2+8, Ri*2+8), pygame.SRCALPHA)
+            lp2 = [(p[0]-cx+Ri+4, p[1]-cy+Ri+4) for p in pts_in]
+            pygame.draw.polygon(is_, (255, 100, 255, int(a * 0.65)), lp2, 2)
+            surface.blit(is_, (cx-Ri-4, cy-Ri-4))
 
-        # Damage boost indicator
+        # Damage boost — pulsing energy wings
         if self.has_effect('damage_boost'):
-            for sign, col in ((-1, (255,80,0)),(1,(255,180,0))):
-                pts = [(int(self.x)+sign*22, self.rect.top+4),
-                       (int(self.x)+sign*12, self.rect.top+16),
-                       (int(self.x)+sign*28, self.rect.top+16)]
-                pygame.draw.polygon(surface, col, pts)
+            t2  = pygame.time.get_ticks()
+            pa  = int(180 + 60 * math.sin(t2 * 0.012))
+            for sign in (-1, 1):
+                wx = int(self.x) + sign * 24
+                wy = self.rect.top + 6
+                pts = [(wx, wy), (wx + sign*12, wy+14), (wx + sign*4, wy+20),
+                       (wx + sign*2, wy+10)]
+                ws = pygame.Surface((40, 30), pygame.SRCALPHA)
+                lp = [(p[0]-wx+18, p[1]-wy+2) for p in pts]
+                pygame.draw.polygon(ws, (255, 120, 0, pa), lp)
+                pygame.draw.polygon(ws, (255, 220, 80, pa//2), lp, 1)
+                surface.blit(ws, (wx - 18, wy - 2))
