@@ -35,7 +35,8 @@ class Enemy(pygame.sprite.Sprite):
         self.size       = cfg['size']
         self.level      = level
 
-        self.is_elite = False
+        self.is_elite  = False
+        self._berserk  = False
 
         self.x     = float(x)
         self.y     = float(y)
@@ -112,6 +113,11 @@ class Enemy(pygame.sprite.Sprite):
             flash = self._orig.copy()
             flash.fill((255,255,255,180), special_flags=pygame.BLEND_RGBA_ADD)
             self.image = flash
+        elif self._berserk:
+            berserk_img = self._orig.copy()
+            pulse = int(60 + 60 * math.sin(self._tick * 0.18))
+            berserk_img.fill((255, pulse, 0, 120), special_flags=pygame.BLEND_RGBA_ADD)
+            self.image = berserk_img
         else:
             self.image = self._orig
 
@@ -120,6 +126,20 @@ class Enemy(pygame.sprite.Sprite):
             self.kill()
 
     def _move(self):
+        # Berserker: low-HP enemies charge straight at the player
+        hp_ratio = self.health / max(self.max_health, 1)
+        if hp_ratio < 0.30 and self.game.player:
+            self._berserk = True
+            dx = self.game.player.x - self.x
+            dy = self.game.player.y - self.y
+            dist = math.hypot(dx, dy) or 1
+            bspd = self.speed * 2.8
+            self.x += dx / dist * bspd
+            self.y += dy / dist * bspd
+            self.rect.center = (int(self.x), int(self.y))
+            return
+        self._berserk = False
+
         self.y += self.speed
         if self.pattern == 'zigzag':
             self._zig_timer += 1

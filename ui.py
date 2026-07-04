@@ -5,7 +5,7 @@ import random
 import pygame
 import os as _os
 from settings import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, WEAPONS, WEAPON_ORDER, TOTAL_LEVELS,
+    SCREEN_WIDTH, SCREEN_HEIGHT, WEAPONS, WEAPON_ORDER, TOTAL_LEVELS, FPS,
     WHITE, BLACK, GOLD, CYAN, RED, GREEN, BLUE, ORANGE, PURPLE,
     UI_BG, UI_BORDER, UI_TEXT, UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOV,
     UI_SUCCESS, UI_DANGER, ACHIEVEMENTS
@@ -440,6 +440,11 @@ class UIManager:
         if UIManager._vignette_cache:
             surface.blit(UIManager._vignette_cache, (0,0))
 
+        # Overlay elements (on top of vignette)
+        self._draw_combo_display(surface)
+        self._draw_challenge_hud(surface)
+        self._draw_last_stand_vignette(surface)
+
     # ── TOP BAR ──────────────────────────────────────────────────────────────
     def _draw_top_bar(self, surface, p, lvl):
         H   = 44
@@ -489,6 +494,71 @@ class UIManager:
                     pygame.draw.circle(surface, bright, (dxc, H // 2), 3)
         except Exception:
             pass
+
+    def _draw_combo_display(self, surface):
+        combo = self.game._combo
+        if combo < 5:
+            return
+        mult  = self.game._combo_mult
+        timer = self.game._combo_timer
+        pulse = int(200 + 55 * math.sin(self._tick * 0.18))
+        col   = (255, 215, 50) if mult < 2.5 else \
+                (255, 100, 20) if mult < 4.0 else (200, 50, 255)
+        ms = self._f_xl.render(f'×{mult:.1f}', True, col)
+        ms.set_alpha(pulse)
+        surface.blit(ms, ms.get_rect(centerx=SCREEN_WIDTH // 2, y=50))
+        # Kill streak badge
+        ks = self.game._kill_streak
+        if ks >= 10:
+            kscols = {10: (255,200,50), 25: (255,100,20), 50: (50,255,255), 100: (200,50,255)}
+            kc = kscols.get(max(k for k in kscols if k <= ks), (255,200,50))
+            kt = self._f_sm.render(f'STREAK  ×{ks}', True, kc)
+            surface.blit(kt, kt.get_rect(centerx=SCREEN_WIDTH // 2,
+                                         y=50 + ms.get_height() + 2))
+
+    def _draw_challenge_hud(self, surface):
+        if not getattr(self.game, '_challenge_active', False):
+            return
+        frames = self.game._challenge_frames
+        total  = self.game._challenge_total_frames or 1
+        done   = self.game._challenge_done
+        goal   = self.game._challenge_goal
+        secs   = max(0, frames // 60 + 1)
+        urgent = secs <= 5
+        col    = (255, 50, 50) if urgent else (255, 200, 0)
+        label  = self._f_sm.render(f'⚡ CHALLENGE: {done}/{goal} kills  |  {secs}s', True, col)
+        bw     = label.get_width() + 24
+        bh     = label.get_height() + 12
+        bx     = SCREEN_WIDTH // 2 - bw // 2
+        by     = 56
+        bg     = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 170))
+        pygame.draw.rect(bg, col, (0, 0, bw, bh), 1, border_radius=6)
+        surface.blit(bg, (bx, by))
+        surface.blit(label, (bx + 12, by + 6))
+        # Progress bar
+        bar_w  = int(bw * done / max(goal, 1))
+        if bar_w > 0:
+            pygame.draw.rect(surface, (*col, 80), (bx, by + bh, bar_w, 4))
+
+    def _draw_last_stand_vignette(self, surface):
+        if not getattr(self.game, '_last_stand_active', False):
+            return
+        pulse = int(55 + 45 * math.sin(self._tick * 0.12))
+        v = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        for i in range(0, 50, 6):
+            a = max(0, pulse - i * 2)
+            pygame.draw.rect(v, (220, 15, 15, a),
+                             (i, i, SCREEN_WIDTH - i * 2, SCREEN_HEIGHT - i * 2), 3)
+        surface.blit(v, (0, 0))
+        # Timer bar at bottom
+        timer = self.game._last_stand_timer
+        total = FPS * 8
+        ratio = max(0.0, timer / total)
+        bw    = int((SCREEN_WIDTH - 40) * ratio)
+        if bw > 0:
+            pygame.draw.rect(surface, (255, 40, 40, 200),
+                             (20, SCREEN_HEIGHT - 8, bw, 6), border_radius=3)
 
     # ── BOTTOM BAR ───────────────────────────────────────────────────────────
     def _draw_bottom_bar(self, surface, p):

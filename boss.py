@@ -37,6 +37,9 @@ class Boss(pygame.sprite.Sprite):
         self._shield_active = False
         self._summon_cd     = 500
 
+        # Phase 2 cinematic (triggered at 50% HP)
+        self._half_triggered = False
+
         # Rage mode (triggered at 25% HP)
         self._rage_mode      = False
         self._rage_triggered = False
@@ -121,6 +124,11 @@ class Boss(pygame.sprite.Sprite):
         if self._phase != old_phase:
             self._on_phase_change()
 
+        # Phase 2 cinematic at 50% HP
+        if not self._half_triggered and ratio < 0.50:
+            self._half_triggered = True
+            self._on_half_hp()
+
         # Rage mode at 25%
         if not self._rage_triggered and ratio < 0.25:
             self._rage_triggered = True
@@ -181,6 +189,23 @@ class Boss(pygame.sprite.Sprite):
         self.game.particles.stars_burst(int(self.x), int(self.y), count=60)
         self.game.particles.shake(15)
         self.game.screen_flash((200, 50, 255), 70)
+
+    def _on_half_hp(self):
+        """Dramatic cinematic when boss drops to 50% — announces Phase 2."""
+        self.game._hitstop_frames = max(self.game._hitstop_frames, 14)
+        self.game.screen_flash((255, 80, 0), 110)
+        self.game.particles.mega_explosion(int(self.x), int(self.y), (255, 80, 0))
+        self.game.particles.shake(22)
+        self.game.ui.show_message(
+            'PHASE  2', SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 90,
+            (255, 80, 0), 'xl')
+        self.game.ui.show_message(
+            'WARNING: Systems Override!', SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30,
+            (255, 200, 80), 'md')
+        self.game.audio.play('boss_warn')
+        # Speed and fire rate escalate
+        self.vx *= 1.4
+        self._attack_cd = max(60, int(self._attack_cd * 0.75))
 
     def _trigger_rage(self):
         """Boss goes berserk at 25% HP."""

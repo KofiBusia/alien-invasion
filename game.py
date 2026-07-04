@@ -158,6 +158,23 @@ class Game:
         # Kill streak (resets when player takes real damage)
         self._kill_streak = 0
 
+        # Last Stand Mode (once per life when HP ≤ 25%)
+        self._last_stand_triggered = False
+        self._last_stand_active    = False
+        self._last_stand_timer     = 0
+
+        # Challenge bounty missions
+        self._challenge_active       = False
+        self._challenge_goal         = 0
+        self._challenge_done         = 0
+        self._challenge_frames       = 0
+        self._challenge_total_frames = 0
+        self._challenge_reward       = 0
+        self._wave_challenge_checked = False
+
+        # Level rank (set by LevelManager.complete)
+        self._last_level_rank = ('', (180, 180, 180))
+
         # Endless survival mode
         self._endless_mode = False
         self._endless_wave = 0
@@ -226,11 +243,19 @@ class Game:
         self.level_manager = LevelManager(self)
         self.level_manager.start_level(level)
 
-        # Reset combo, kill streak, perks, asteroid state, and endless mode on new game
+        # Reset combat state on new game
         self._combo        = 0
         self._combo_mult   = 1.0
         self._combo_timer  = 0
         self._kill_streak  = 0
+        self._last_stand_triggered   = False
+        self._last_stand_active      = False
+        self._last_stand_timer       = 0
+        self._challenge_active       = False
+        self._challenge_done         = 0
+        self._challenge_frames       = 0
+        self._challenge_total_frames = 0
+        self._wave_challenge_checked = False
         self._endless_mode = False
         self._endless_wave = 0
         self._perk_screen._history.clear()
@@ -252,6 +277,8 @@ class Game:
         self.level_cfg = get_level_config(self.current_level)
         self.level_manager.start_level(self.current_level)
         self.background.set_theme(get_chapter(min(self.current_level, TOTAL_LEVELS)))
+        self._wave_challenge_checked = False
+        self._last_stand_triggered   = False  # reset per life (triggered per level)
 
         if self._endless_mode:
             self._endless_wave += 1
@@ -634,6 +661,8 @@ class Game:
         self._handle_perk_magnet()
         self._process_bomb_effect()
         self._check_achievements()
+        self._update_last_stand()
+        self._update_challenge()
 
         # Decay combo timer
         if self._combo_timer > 0:
@@ -706,23 +735,34 @@ class Game:
         # Kill streak — resets when player takes real damage
         self._kill_streak += 1
         ks = self._kill_streak
-        if ks in (10, 25, 50):
-            ks_rewards = {10: 200, 25: 600, 50: 1500}
-            ks_colors  = {10: (255, 180, 0), 25: (255, 50, 200), 50: (50, 255, 255)}
-            reward = ks_rewards[ks]
-            kscol  = ks_colors[ks]
+        _KS_ANNOUNCE = {
+            10:  (200,  (255, 210, 50),  'KILLING SPREE!'),
+            25:  (600,  (255, 110, 20),  'R A M P A G E ! !'),
+            50:  (1500, (50,  255, 255), 'G O D L I K E'),
+            100: (5000, (255, 50,  255), 'L E G E N D A R Y'),
+        }
+        if ks in _KS_ANNOUNCE:
+            reward, kscol, announce = _KS_ANNOUNCE[ks]
             if self.player:
                 self.player.coins += reward
-            self.ui.show_message(
-                f'KILL STREAK ×{ks}!  +{reward}',
-                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 100,
-                kscol, 'lg')
-            self.particles.stars_burst(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 50)
-            self.screen_flash(kscol, 70)
+            self.ui.show_message(announce,
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120, kscol, 'xl')
+            self.ui.show_message(f'+{reward} COINS',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50, GOLD, 'lg')
+            self.particles.stars_burst(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 80)
+            self.screen_flash(kscol, 90)
+            self._hitstop_frames = max(self._hitstop_frames, 6)
 
-        # Track elite kills
+        # Track elite kills + special fanfare
         if getattr(enemy, 'is_elite', False):
             self.save.increment_stat('elite_kills')
+            self.ui.show_message('ELITE SLAIN!', ex, ey - 40, (255, 215, 0), 'lg')
+            self.particles.stars_burst(ex, ey, 35)
+            self._hitstop_frames = max(self._hitstop_frames, 5)
+
+        # Challenge kill counter
+        if self._challenge_active:
+            self._challenge_done += 1
 
         # Shockwave ring on every kill (desktop only — avoids Android overdraw)
         if not IS_ANDROID:
@@ -732,6 +772,84 @@ class Game:
         if self.player and self.player.perk_chain_blast and random.random() < 0.35:
             self._area_damage(ex, ey, 80, 18, source='chain')
 
+
+    def _update_last_stand(self):
+        if not self.player:
+            return
+        hp_ratio = self.player.health / max(self.player.max_health, 1)
+        # Reset trigger when healed back above 60% (after respawn or full heal)
+        if hp_ratio > 0.60:
+            self._last_stand_triggered = False
+            self._last_stand_active    = False
+        # Trigger Last Stand at ≤ 25% HP (once per life)
+        if not self._last_stand_triggered and 0 < hp_ratio <= 0.25:
+            self._last_stand_triggered = True
+            self._last_stand_active    = True
+            self._last_stand_timer     = int(FPS * 8)
+            self.player.add_effect('damage_boost', 8000)
+            self.player.add_effect('speed_boost',  8000)
+            self.particles.mega_explosion(
+                int(self.player.x), int(self.player.y), (255, 40, 0))
+            self.particles.shake(22)
+            self.screen_flash((200, 0, 0), 130)
+            self.ui.show_message('LAST  STAND!',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 80,
+                (255, 40, 0), 'xl')
+            self.ui.show_message('2× DAMAGE  |  SPEED UP',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 10,
+                (255, 180, 80), 'md')
+            self.audio.play('boss_warn')
+        # Countdown
+        if self._last_stand_active:
+            self._last_stand_timer -= 1
+            if self._last_stand_timer <= 0:
+                self._last_stand_active = False
+
+    def _update_challenge(self):
+        if not self._challenge_active:
+            # Check if we should start a challenge this wave
+            lm = self.level_manager
+            if (lm and lm.phase == 'wave' and not self._wave_challenge_checked
+                    and not lm.cfg.get('is_boss', False)):
+                self._wave_challenge_checked = True
+                if random.random() < 0.28:
+                    self._start_challenge()
+            return
+        self._challenge_frames -= 1
+        if self._challenge_frames <= 0:
+            self._challenge_active = False
+            self.ui.show_message('CHALLENGE FAILED',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2,
+                (255, 60, 60), 'lg')
+            return
+        if self._challenge_done >= self._challenge_goal:
+            self._challenge_active = False
+            if self.player:
+                self.player.coins += self._challenge_reward
+                self.save.add_coins(self._challenge_reward)
+            self.screen_flash((255, 200, 0), 80)
+            self.particles.stars_burst(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 60)
+            self.ui.show_message(f'CHALLENGE COMPLETE!  +{self._challenge_reward}',
+                SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
+                (255, 215, 0), 'xl')
+            self.audio.play('powerup')
+
+    def _start_challenge(self):
+        total = sum(self.level_manager._totals.values()) if self.level_manager else 8
+        goal  = max(4, total // 2)
+        secs  = max(10, int(goal * 1.6))
+        self._challenge_active       = True
+        self._challenge_goal         = goal
+        self._challenge_done         = 0
+        self._challenge_frames       = secs * FPS
+        self._challenge_total_frames = secs * FPS
+        self._challenge_reward       = goal * 90 + self.current_level * 5
+        self.screen_flash((255, 200, 0), 60)
+        self.ui.show_message(
+            f'⚡ CHALLENGE!  Kill {goal} in {secs}s',
+            SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
+            (255, 210, 0), 'lg')
+        self.audio.play('powerup')
 
     def _area_damage(self, cx, cy, radius, dmg, source='explosion'):
         self.particles.explosion(int(cx), int(cy), (255, 160, 40), count=18, speed=5)

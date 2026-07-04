@@ -115,14 +115,24 @@ class LevelManager:
             if ach and save.unlock_achievement(ach):
                 self.game.ui.show_achievement(ach)
 
-        if self.game.player.level_damage_taken == 0:
+        dmg_taken = self.game.player.level_damage_taken
+        max_hp    = self.game.player.max_health
+        if dmg_taken == 0:
+            rank, rank_col, rank_bonus = 'S', (255, 215, 0),   500 + lvl * 10
             save.increment_stat('perfect_levels')
-            bonus = 200 + lvl * 50
-            self.game.player.coins += bonus
-            self.game.ui.show_message(
-                f'PERFECT! +{bonus} COINS',
-                SCREEN_WIDTH // 2, 320,
-                (255, 220, 50), 'lg')
+        elif dmg_taken < max_hp * 0.15:
+            rank, rank_col, rank_bonus = 'A', (80, 220, 80),   200
+        elif dmg_taken < max_hp * 0.45:
+            rank, rank_col, rank_bonus = 'B', (80, 160, 255),  50
+        else:
+            rank, rank_col, rank_bonus = 'C', (160, 160, 160), 0
+
+        self.game._last_level_rank = (rank, rank_col)
+        self.game.ui.show_message(
+            f'RANK  {rank}' + (f'  +{rank_bonus}' if rank_bonus else ''),
+            SCREEN_WIDTH // 2, 280, rank_col, 'xl')
+        if rank_bonus:
+            self.game.player.coins += rank_bonus
 
         self.game.player.level_damage_taken = 0
 
@@ -130,7 +140,7 @@ class LevelManager:
         self.game.player.coins += clear_bonus
         self.game.ui.show_message(
             f'WAVE CLEAR  +{clear_bonus}',
-            SCREEN_WIDTH // 2, 380,
+            SCREEN_WIDTH // 2, 370,
             (80, 220, 100), 'md')
         self.game.particles.stars_burst(SCREEN_WIDTH // 2, 400, 60)
         self.game.screen_flash((80, 220, 80), 50)
