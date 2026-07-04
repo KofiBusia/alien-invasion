@@ -40,6 +40,7 @@ DEFAULT_SAVE = {
     "unlocked_allies":   [],
     "unlocked_trails":   [],
     "active_trail":      None,
+    "best_endless_wave": 0,
     "stats": {
         "kills":         0,
         "bosses_killed": 0,
@@ -47,6 +48,9 @@ DEFAULT_SAVE = {
         "shots_fired":   0,
         "damage_dealt":  0,
         "damage_taken":  0,
+        "elite_kills":   0,
+        "max_combo":     0,
+        "endless_waves": 0,
     },
     "settings": {
         "music_volume":  0.5,

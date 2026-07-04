@@ -305,6 +305,25 @@ class Background:
             pygame.draw.line(s, (r, g, b), (0, y), (SCREEN_WIDTH, y))
         return s
 
+    _CHAPTER_THEMES = {
+        1: ((4, 2, 20),  (12, 6, 44)),   # deep blue (default)
+        2: ((8, 2, 28),  (20, 4, 60)),   # dark violet
+        3: ((2, 8, 30),  (4, 24, 62)),   # teal nebula
+        4: ((20, 2, 12), (44, 4, 32)),   # crimson void
+        5: ((12, 2, 24), (30, 6, 50)),   # purple chaos
+    }
+
+    def set_theme(self, chapter: int):
+        top, bot = self._CHAPTER_THEMES.get(chapter, self._CHAPTER_THEMES[1])
+        s = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        for y in range(SCREEN_HEIGHT):
+            t = y / SCREEN_HEIGHT
+            r = int(top[0] + t * (bot[0] - top[0]))
+            g = int(top[1] + t * (bot[1] - top[1]))
+            b = int(top[2] + t * (bot[2] - top[2]))
+            pygame.draw.line(s, (r, g, b), (0, y), (SCREEN_WIDTH, y))
+        Background._grad = s
+
     def __init__(self):
         if Background._grad is None:
             Background._grad = self._build_gradient()

@@ -346,11 +346,12 @@ class UIManager:
             btn(cx, y0+gap*2, 'QUIT',        (95,18,18),  (155,38,38),  (255,60,60),(255,120,80)),
         ]
 
-        y0 = 410
+        y0 = 400
         self._vict_btns = [
-            btn(cx, y0,       'PLAY AGAIN',  (18,95,28),  (38,155,48),  (0,200,80), (80,255,120)),
-            btn(cx, y0+gap,   'MAIN MENU'),
-            btn(cx, y0+gap*2, 'QUIT',        (95,18,18),  (155,38,38),  (255,60,60),(255,120,80)),
+            btn(cx, y0,       'PLAY AGAIN',       (18,95,28),  (38,155,48),  (0,200,80),  (80,255,120)),
+            btn(cx, y0+gap,   'ENDLESS SURVIVAL', (120,48,8),  (180,78,18),  (255,140,0), (255,200,60)),
+            btn(cx, y0+gap*2, 'MAIN MENU'),
+            btn(cx, y0+gap*3, 'QUIT',             (95,18,18),  (155,38,38),  (255,60,60), (255,120,80)),
         ]
 
         sw = 135
@@ -444,9 +445,14 @@ class UIManager:
         H   = 44
         surface.blit(UIManager._hud_top_cache, (0, 0))
 
-        # Level badge
-        lc  = GOLD if lvl >= TOTAL_LEVELS else (90,200,255)
-        lt  = self._f_hud.render(f'LEVEL  {lvl} / {TOTAL_LEVELS}', True, lc)
+        # Level / endless wave badge
+        if getattr(self.game, '_endless_mode', False):
+            wave = getattr(self.game, '_endless_wave', 0)
+            lc   = (255, 120, 0)
+            lt   = self._f_hud.render(f'ENDLESS  WAVE {wave}', True, lc)
+        else:
+            lc = GOLD if lvl >= TOTAL_LEVELS else (90, 200, 255)
+            lt = self._f_hud.render(f'LEVEL  {lvl} / {TOTAL_LEVELS}', True, lc)
         surface.blit(lt, (16, (H-lt.get_height())//2))
 
         # Score (center) — pulses on new kills

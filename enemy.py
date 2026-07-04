@@ -35,6 +35,8 @@ class Enemy(pygame.sprite.Sprite):
         self.size       = cfg['size']
         self.level      = level
 
+        self.is_elite = False
+
         self.x     = float(x)
         self.y     = float(y)
         self._tick = 0
@@ -63,6 +65,28 @@ class Enemy(pygame.sprite.Sprite):
         pygame.draw.ellipse(s, (200,240,255,180), (w//2-4, h//3-2, 8, 9))
         pygame.draw.rect(s, dim, (w//4, h-6, w//2, 6), border_radius=3)
         return s
+
+    def make_elite(self):
+        """Upgrade to elite: boosted stats + gold visual baked onto self._orig."""
+        self.is_elite    = True
+        self.max_health  = int(self.max_health * 1.8)
+        self.health      = self.max_health
+        self.damage      = int(self.damage * 1.6)
+        self.score_val   = int(self.score_val * 3)
+        self.coin_val    = int(self.coin_val * 3)
+        if self.shoot_cd:
+            self.shoot_cd = max(400, int(self.shoot_cd * 0.70))
+
+        # Bake gold border + ELITE badge onto _orig so it survives every-frame reset
+        w, h = self._orig.get_size()
+        for t in range(3):
+            alpha = 220 - t * 50
+            pygame.draw.rect(self._orig, (255, 200, 0, alpha),
+                             (t, t, w - t * 2, h - t * 2), 1)
+        font = pygame.font.SysFont('consolas', 9, bold=True)
+        badge = font.render('ELITE', True, (255, 220, 0))
+        self._orig.blit(badge, (2, 2))
+        self.image = self._orig.copy()
 
     def update(self):
         self._tick += 1
@@ -1339,6 +1363,8 @@ def spawn_enemy(game, kind: str, x: float = None, y: float = -40) -> Enemy:
         x = random.uniform(40, SCREEN_WIDTH - 40)
     cls = _ENEMY_CLASSES.get(kind, Scout)
     e   = cls(game, x, y, level=game.current_level)
+    if random.random() < 0.08:
+        e.make_elite()
     game.enemies.add(e)
     game.all_sprites.add(e)
     return e

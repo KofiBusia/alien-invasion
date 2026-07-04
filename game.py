@@ -158,6 +158,10 @@ class Game:
         # Kill streak (resets when player takes real damage)
         self._kill_streak = 0
 
+        # Endless survival mode
+        self._endless_mode = False
+        self._endless_wave = 0
+
         # Daily login bonus (0 if already claimed today)
         self._daily_bonus = self.save.check_daily_bonus()
 
@@ -222,14 +226,17 @@ class Game:
         self.level_manager = LevelManager(self)
         self.level_manager.start_level(level)
 
-        # Reset combo, kill streak, perks, and asteroid state on new game
-        self._combo       = 0
-        self._combo_mult  = 1.0
-        self._combo_timer = 0
-        self._kill_streak = 0
+        # Reset combo, kill streak, perks, asteroid state, and endless mode on new game
+        self._combo        = 0
+        self._combo_mult   = 1.0
+        self._combo_timer  = 0
+        self._kill_streak  = 0
+        self._endless_mode = False
+        self._endless_wave = 0
         self._perk_screen._history.clear()
         self.asteroids.empty()
         self._asteroid_field.reset()
+        self.background.set_theme(get_chapter(level))
 
         self.ui.ensure_secondary_menus()
         self.change_state('PLAYING')
@@ -237,13 +244,23 @@ class Game:
     def _next_level(self):
         completed = self.current_level
         self.current_level += 1
-        if self.current_level > TOTAL_LEVELS:
+        if not self._endless_mode and self.current_level > TOTAL_LEVELS:
             self._start_ultimate_boss()
             return
         self._clear_enemies_and_bullets()
         self._spawn_allies()
         self.level_cfg = get_level_config(self.current_level)
         self.level_manager.start_level(self.current_level)
+        self.background.set_theme(get_chapter(min(self.current_level, TOTAL_LEVELS)))
+
+        if self._endless_mode:
+            self._endless_wave += 1
+            self.save.increment_stat('endless_waves')
+            best = self.save.get('best_endless_wave', 0)
+            if self._endless_wave > best:
+                self.save.set('best_endless_wave', self._endless_wave)
+            self.change_state('PLAYING')
+            return
 
         # Perk upgrade screen every 5 completed levels
         if completed % 5 == 0:
@@ -265,6 +282,22 @@ class Game:
                 a    = Ally(self, key, slot)
                 self.allies.add(a)
                 self.all_sprites.add(a)
+
+    def start_endless_mode(self):
+        """Begin endless survival — called from the victory screen."""
+        self._endless_mode  = True
+        self._endless_wave  = 0
+        self.current_level  = TOTAL_LEVELS + 1
+        self._clear_enemies_and_bullets()
+        self._spawn_allies()
+        self.level_cfg = get_level_config(self.current_level)
+        self.level_manager.start_level(self.current_level)
+        self.background.set_theme(5)
+        self.change_state('PLAYING')
+        self.screen_flash((255, 100, 0), 100)
+        self.ui.show_message('ENDLESS SURVIVAL!',
+            SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 100,
+            (255, 160, 0), 'xl')
 
     def _start_ultimate_boss(self):
         """Trigger the ultimate boss battle after level 100."""
@@ -553,6 +586,8 @@ class Game:
         if label == 'PLAY AGAIN':
             self.save.set('current_coins', 0)
             self.start_new_game(1)
+        elif label == 'ENDLESS SURVIVAL':
+            self.start_endless_mode()
         elif label == 'MAIN MENU':
             self.change_state('MAIN_MENU')
         elif label == 'QUIT':
@@ -609,6 +644,9 @@ class Game:
                     SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
                     (255, 200, 50), 'md')
         if self._combo_timer == 0 and self._combo > 0:
+            prev_max = self.save.data['stats'].get('max_combo', 0)
+            if self._combo > prev_max:
+                self.save.data['stats']['max_combo'] = self._combo
             self._combo      = 0
             self._combo_mult = 1.0
 
@@ -632,6 +670,9 @@ class Game:
                     SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 60,
                     (255, 200, 50), 'md')
         if self._combo_timer == 0 and self._combo > 0:
+            prev_max = self.save.data['stats'].get('max_combo', 0)
+            if self._combo > prev_max:
+                self.save.data['stats']['max_combo'] = self._combo
             self._combo      = 0
             self._combo_mult = 1.0
 
@@ -678,6 +719,10 @@ class Game:
                 kscol, 'lg')
             self.particles.stars_burst(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 50)
             self.screen_flash(kscol, 70)
+
+        # Track elite kills
+        if getattr(enemy, 'is_elite', False):
+            self.save.increment_stat('elite_kills')
 
         # Shockwave ring on every kill (desktop only — avoids Android overdraw)
         if not IS_ANDROID:
@@ -916,11 +961,14 @@ class Game:
                     ally.take_damage(enemy.damage // 2)
                     break
 
-        # Player collecting coins
+        # Player collecting coins — combo multiplier at 10/20/50 streak
         for coin in list(self.coins_group):
             if coin.rect.colliderect(player.rect):
-                player.coins += coin.value
-                self.save.add_coins(coin.value)
+                combo = self._combo
+                mult  = 5 if combo >= 50 else 3 if combo >= 20 else (2 if combo >= 10 else 1)
+                value = coin.value * mult
+                player.coins += value
+                self.save.add_coins(value)
                 self.audio.play('coin')
                 coin.kill()
 
@@ -1081,6 +1129,9 @@ class Game:
             'ch4_clear':     best_lvl >= 80,
             'earth_defender':  best_lvl >= TOTAL_LEVELS,
             'ultimate_slayer': 'ultimate_slayer' in self.save.get('achievements', []),
+            'elite_slayer':    stats.get('elite_kills', 0) >= 50,
+            'combo_god':       stats.get('max_combo', 0) >= 50,
+            'endless_veteran': self.save.get('best_endless_wave', 0) >= 20,
         }
         for aid, cond in conditions.items():
             if cond:

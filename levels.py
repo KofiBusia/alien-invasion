@@ -72,7 +72,10 @@ class LevelManager:
         elif self._phase == 'complete':
             self._complete_timer += 1
             if self._complete_timer >= 90:
-                self.game.change_state('QUIZ')
+                if getattr(self.game, '_endless_mode', False):
+                    self.game._next_level()
+                else:
+                    self.game.change_state('QUIZ')
 
     @property
     def phase(self) -> str:

@@ -345,6 +345,41 @@ ENEMY_CONFIGS = {
 
 # ── Level generator ───────────────────────────────────────────────────────────
 def get_level_config(level: int) -> dict:
+    # Endless survival: levels beyond 100 use Chapter 5 enemies with escalating difficulty
+    if level > TOTAL_LEVELS:
+        wave    = level - TOTAL_LEVELS
+        base_m  = 1.0 + (TOTAL_CHAPTERS - 1) * 0.35   # Chapter 5 base
+        esc_m   = 1.0 + wave * 0.06
+        m       = base_m * esc_m
+        enemies = CHAPTER_ENEMIES[5]
+        scout, fighter, tank, destr = enemies
+        counts = {
+            scout:   min(int(5 + wave * 1.8), 30),
+            fighter: min(int(max(0, wave - 1) * 1.5), 18),
+            tank:    min(int(max(0, wave - 2) * 1.0), 12),
+            destr:   min(int(max(0, wave - 4) * 0.7),  8),
+        }
+        is_boss = (wave % 10 == 0)
+        return {
+            'level':          level,
+            'chapter':        5,
+            'chapter_level':  wave,
+            'is_boss':        is_boss,
+            'enemy_kinds':    enemies,
+            'enemy_counts':   counts,
+            'scout_count':    counts[scout],
+            'fighter_count':  counts[fighter],
+            'tank_count':     counts[tank],
+            'destroyer_count':counts[destr],
+            'spawn_rate':     max(0.15, 2.0 - wave * 0.07),
+            'speed_mult':     m,
+            'health_mult':    m,
+            'damage_mult':    m * 0.9,
+            'fire_rate_mult': max(0.20, 1.0 - wave * 0.02),
+            'boss_health':    int(1500 * esc_m),
+            'boss_damage':    int(45 * esc_m),
+        }
+
     chapter  = get_chapter(level)
     ch_level = get_chapter_level(level)   # 1-20 within the chapter
 
@@ -402,6 +437,9 @@ ACHIEVEMENTS = {
     'ch4_clear':      ('Dark Matter Lord',   'Clear Chapter 4'),
     'earth_defender':  ('Saviour of Earth',    'Complete all 5 chapters'),
     'ultimate_slayer': ('Omega Nemesis',       'Defeat the ultimate final boss'),
+    'elite_slayer':    ('Elite Hunter',        'Kill 50 elite enemies'),
+    'combo_god':       ('Combo God',           'Reach a 50x combo'),
+    'endless_veteran': ('Endless Veteran',     'Survive 20 endless waves'),
 }
 
 # ── Visual FX ─────────────────────────────────────────────────────────────────
