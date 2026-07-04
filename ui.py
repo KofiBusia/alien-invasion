@@ -330,6 +330,8 @@ class UIManager:
             'rainbow':      (255,80,200),
         }
 
+        self._hud_cache: dict = {}   # (key, text, color) → Surface — avoids per-frame font.render
+
         self._build_menus()
         self._build_hud_panel()
         self._build_vignette()
@@ -353,6 +355,18 @@ class UIManager:
                 a = int(160*(1-r/300)**2)
                 pygame.draw.circle(s, (0,0,0,a), (cx,cy), r)
         UIManager._vignette_cache = s
+
+    def _cached_render(self, key: str, text: str, font, color) -> pygame.Surface:
+        """Return a cached font surface — only re-renders when text or color changes."""
+        cache_key = (key, text, color)
+        surf = self._hud_cache.get(cache_key)
+        if surf is not None:
+            return surf
+        if len(self._hud_cache) > 300:
+            self._hud_cache.clear()
+        surf = font.render(text, True, color)
+        self._hud_cache[cache_key] = surf
+        return surf
 
     def _build_menus(self):
         cx  = SCREEN_WIDTH // 2
@@ -497,16 +511,16 @@ class UIManager:
         if getattr(self.game, '_endless_mode', False):
             wave = getattr(self.game, '_endless_wave', 0)
             lc   = (255, 120, 0)
-            lt   = self._f_hud.render(f'ENDLESS  WAVE {wave}', True, lc)
+            lt   = self._cached_render('level', f'ENDLESS  WAVE {wave}', self._f_hud, lc)
         else:
             lc = GOLD if lvl >= TOTAL_LEVELS else (90, 200, 255)
-            lt = self._f_hud.render(f'LEVEL  {lvl} / {TOTAL_LEVELS}', True, lc)
+            lt = self._cached_render('level', f'LEVEL  {lvl} / {TOTAL_LEVELS}', self._f_hud, lc)
         surface.blit(lt, (16, (H-lt.get_height())//2))
 
         # Score (center) with micro-label and NEW RECORD flash
-        sc  = self._f_md.render(f'{p.score:,}', True, GOLD)
+        sc  = self._cached_render('score', f'{p.score:,}', self._f_md, GOLD)
         surface.blit(sc, sc.get_rect(centerx=SCREEN_WIDTH//2, centery=H//2+1))
-        slbl = self._f_xs.render('SCORE', True, (90, 120, 180))
+        slbl = self._cached_render('slbl', 'SCORE', self._f_xs, (90, 120, 180))
         surface.blit(slbl, slbl.get_rect(centerx=SCREEN_WIDTH//2, centery=H//2-10))
         if p.score > 0 and p.score > self.game.save.get('high_score', 0):
             nr_a = int(180 + 75 * math.sin(self._tick * 0.22))
@@ -515,7 +529,7 @@ class UIManager:
             surface.blit(nr, nr.get_rect(centerx=SCREEN_WIDTH//2, y=H - 12))
 
         # Coins (right)
-        ct = self._f_hud.render(f'  {p.coins:,}', True, GOLD)
+        ct = self._cached_render('coins', f'  {p.coins:,}', self._f_hud, GOLD)
         bx = SCREEN_WIDTH - ct.get_width() - 22
         pygame.draw.circle(surface, GOLD, (bx-8, H//2), 8)
         pygame.draw.circle(surface, (255,240,110), (bx-8, H//2), 5)
@@ -528,7 +542,7 @@ class UIManager:
             kc = (255, 200, 50)
         else:
             kc = (130, 150, 190)
-        kt = kf.render(f'KILLS: {kills:,}', True, kc)
+        kt = self._cached_render('kills', f'KILLS: {kills:,}', kf, kc)
         surface.blit(kt, (SCREEN_WIDTH-kt.get_width()-16, H-14))
 
         # Perk build dots — colored circles for each perk the player has picked
@@ -653,7 +667,7 @@ class UIManager:
         _seg_bar(surface, bx, by, BAR_W, BAR_H, ratio, hcol, segments=10)
         pygame.draw.rect(surface, (60, 20, 20), (bx, by, BAR_W, BAR_H),
                          border_radius=3, width=1)
-        ht = self._f_xs.render(f'HP  {p.health}/{p.max_health}', True, (240, 240, 240))
+        ht = self._cached_render('hp', f'HP  {int(p.health)}/{p.max_health}', self._f_xs, (240, 240, 240))
         surface.blit(ht, (bx + 4, by + 1))
         # Critical warning text
         if ratio <= 0.25 and p.health > 0:
@@ -668,7 +682,7 @@ class UIManager:
         sr  = max(0.0, p.shield / max(p.max_shield, 1))
         _seg_bar(surface, bx, sby, SBW, SBH, sr, (55, 115, 255), segments=8, bg=(8, 10, 38))
         pygame.draw.rect(surface, (25, 35, 95), (bx, sby, SBW, SBH), border_radius=3, width=1)
-        st = self._f_xs.render(f'SH  {p.shield}/{p.max_shield}', True, (150, 195, 255))
+        st = self._cached_render('sh', f'SH  {int(p.shield)}/{p.max_shield}', self._f_xs, (150, 195, 255))
         surface.blit(st, (bx + 3, sby + 1))
 
     # ── WEAPON HUD ────────────────────────────────────────────────────────────
@@ -707,7 +721,7 @@ class UIManager:
             dc = tuple(int(v*0.55) for v in col)
             pygame.draw.circle(surface, dc, (cx_,cy_), 5)
 
-        wt = self._f_xs.render(name, True, col)
+        wt = self._cached_render('wpn', name, self._f_xs, col)
         surface.blit(wt, wt.get_rect(centerx=cx_, y=BY+66))
 
         # Weapon index pips

@@ -146,6 +146,10 @@ class Game:
             self._ctrl_fire_idle, self._ctrl_fire_active, \
             self._ctrl_prev_surf, self._ctrl_next_surf = self._build_ctrl_surfs()
 
+        # ── Pause button (top-right corner, Android) ──────────────────────
+        self._pause_btn_rect  = pygame.Rect(SCREEN_WIDTH - 100, 6, 90, 56)
+        self._ctrl_pause_surf = self._build_pause_surf()
+
         # ── Pre-rendered low-health vignette ──────────────────────────────
         self._vignette_surf = self._build_vignette_surf()
 
@@ -488,7 +492,9 @@ class Game:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mx, my = event.pos
-                if self._obtn_prev.collidepoint(mx, my):
+                if self._pause_btn_rect.collidepoint(mx, my):
+                    self.change_state('PAUSED')
+                elif self._obtn_prev.collidepoint(mx, my):
                     self.player.switch_weapon(-1)
                     self.audio.play('click')
                 elif self._obtn_next.collidepoint(mx, my):
@@ -534,6 +540,12 @@ class Game:
     def _on_finger_down(self, fid, fx, fy):
         x, y = fx * SCREEN_WIDTH, fy * SCREEN_HEIGHT
         self._touch_fingers[fid] = (x, y)
+
+        # Pause button — highest priority
+        if self._pause_btn_rect.collidepoint(x, y):
+            self.audio.play('click')
+            self.change_state('PAUSED')
+            return
 
         # Weapon buttons take priority
         if self._obtn_prev.collidepoint(x, y):
@@ -1592,6 +1604,22 @@ class Game:
             pygame.draw.line(s, col, (SCREEN_WIDTH-1-i, 0), (SCREEN_WIDTH-1-i, SCREEN_HEIGHT))
         return s
 
+    def _build_pause_surf(self) -> pygame.Surface:
+        w, h = self._pause_btn_rect.width, self._pause_btn_rect.height
+        s = pygame.Surface((w, h), pygame.SRCALPHA)
+        # Dark navy bg with rounded corners
+        pygame.draw.rect(s, (8, 18, 55, 195), (0, 0, w, h), border_radius=14)
+        # Neon cyan border
+        pygame.draw.rect(s, (0, 175, 255, 230), (0, 0, w, h), 2, border_radius=14)
+        # Inner dim glow ring
+        pygame.draw.rect(s, (0, 100, 200, 60), (3, 3, w-6, h-6), border_radius=12)
+        # Pause bars: two vertical rects
+        bw, bh = 10, 28
+        cx, cy = w // 2, h // 2
+        pygame.draw.rect(s, (255, 255, 255, 245), (cx - 14, cy - bh//2, bw, bh), border_radius=3)
+        pygame.draw.rect(s, (255, 255, 255, 245), (cx + 4,  cy - bh//2, bw, bh), border_radius=3)
+        return s
+
     # ── On-screen touch / mouse control overlay ───────────────────────────────
     def _draw_onscreen_controls(self, surface: pygame.Surface):
         joy_base, joy_knob_idle, joy_knob_act, fire_idle, fire_act, prev_s, next_s \
@@ -1623,6 +1651,9 @@ class Game:
         # Weapon buttons
         surface.blit(prev_s, self._obtn_prev.topleft)
         surface.blit(next_s, self._obtn_next.topleft)
+
+        # Pause button (top-right corner)
+        surface.blit(self._ctrl_pause_surf, self._pause_btn_rect.topleft)
 
         # Desktop hint (first 8 s only)
         if not IS_ANDROID and pygame.time.get_ticks() < 8000:
