@@ -397,10 +397,10 @@ def get_level_config(level: int) -> dict:
     destr_kind   = enemies[3]
 
     enemy_counts = {
-        scout_kind:   min(int(3 + ch_level * 1.5), 22),
-        fighter_kind: min(int(max(0, ch_level - 2) * 1.0), 14),
-        tank_kind:    min(int(max(0, ch_level - 4) * 0.6), 10),
-        destr_kind:   min(int(max(0, ch_level - 8) * 0.5),  6),
+        scout_kind:   min(int(5 + ch_level * 2.0),           28),
+        fighter_kind: min(int(max(0, ch_level - 1) * 1.5),   16),
+        tank_kind:    min(int(max(0, ch_level - 3)),          10),
+        destr_kind:   min(int(max(0, ch_level - 7) * 0.7),    7),
     }
 
     return {
@@ -415,7 +415,7 @@ def get_level_config(level: int) -> dict:
         'fighter_count':  enemy_counts[fighter_kind],
         'tank_count':     enemy_counts[tank_kind],
         'destroyer_count':enemy_counts[destr_kind],
-        'spawn_rate':     max(0.35, 2.5 - ch_level * 0.09),
+        'spawn_rate':     max(0.22, 1.9 - ch_level * 0.07),
         'speed_mult':     m * chap_m,
         'health_mult':    m * chap_m,
         'damage_mult':    (1.0 + (ch_level - 1) * 0.06) * chap_m,

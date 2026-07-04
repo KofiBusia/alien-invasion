@@ -6,7 +6,7 @@ import pygame
 from settings import (
     get_level_config, get_chapter, get_chapter_level,
     get_chapter_name, get_chapter_color, get_chapter_subtitle,
-    TOTAL_LEVELS, SCREEN_WIDTH, LEVELS_PER_CHAPTER
+    TOTAL_LEVELS, SCREEN_WIDTH, LEVELS_PER_CHAPTER, FPS
 )
 from enemy import spawn_enemy
 
@@ -32,7 +32,7 @@ class LevelManager:
         self._kinds:   list[str]      = []
         self._boss_spawned   = False
         self._complete_timer = 0
-        self._intro_timer    = 120
+        self._intro_timer    = int(120 * FPS // 60)
         self._formation_cd   = 0
         self._is_chapter_start = False
         self._wave_font  = pygame.font.SysFont('consolas', 13)
@@ -51,7 +51,7 @@ class LevelManager:
         self._formation_cd = 0
 
         self._is_chapter_start = (self.cfg['chapter_level'] == 1 and level > 1)
-        self._intro_timer = 150 if self._is_chapter_start else 90
+        self._intro_timer = int((150 if self._is_chapter_start else 90) * FPS // 60)
 
         self._kinds   = list(self.cfg['enemy_kinds'])
         enemy_counts  = self.cfg['enemy_counts']
@@ -71,7 +71,7 @@ class LevelManager:
             self._update_boss()
         elif self._phase == 'complete':
             self._complete_timer += 1
-            if self._complete_timer >= 90:
+            if self._complete_timer >= int(90 * FPS // 60):
                 if getattr(self.game, '_endless_mode', False):
                     self.game._next_level()
                 else:
@@ -150,7 +150,7 @@ class LevelManager:
         if not self.intro_active:
             return
         t   = self._intro_timer
-        MAX = 150 if self._is_chapter_start else 90
+        MAX = int((150 if self._is_chapter_start else 90) * FPS // 60)
         FADE_IN  = 20
         FADE_OUT = 25
 
@@ -264,7 +264,7 @@ class LevelManager:
     def _update_wave(self):
         self._wave_timer  += 1
         self._formation_cd = max(0, self._formation_cd - 1)
-        rate = self.cfg['spawn_rate'] * 60
+        rate = self.cfg['spawn_rate'] * FPS
 
         if self._wave_timer >= rate:
             self._wave_timer = 0
@@ -273,7 +273,7 @@ class LevelManager:
         remaining = sum(self._totals.get(k,0) - self._spawned.get(k,0) for k in self._totals)
         if (self._formation_cd == 0
                 and remaining >= 5
-                and random.random() < 0.004):
+                and random.random() < 0.004 * 60.0 / FPS):
             self._try_formation()
             self._formation_cd = int(rate * 3)
 

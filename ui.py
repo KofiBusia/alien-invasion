@@ -1173,7 +1173,12 @@ class UIManager:
                 yield b
 
     def _draw_menu_bg(self, surface: pygame.Surface):
-        self.game.background.draw(surface)
+        if _IS_ANDROID:
+            from background import Background
+            if Background._grad:
+                surface.blit(Background._grad, (0, 0))
+        else:
+            self.game.background.draw(surface)
         # Dark overlay — build once, reuse (set_alpha avoids per-frame SRCALPHA alloc)
         if UIManager._menu_bg_cache is None:
             d = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))

@@ -1507,7 +1507,9 @@ class Game:
         """Show active ally ships during the final boss battle."""
         if not self.allies:
             return
-        font = pygame.font.SysFont('consolas', 14, bold=True)
+        if not hasattr(self, '_ally_hud_font'):
+            self._ally_hud_font = pygame.font.SysFont('consolas', 14, bold=True)
+        font = self._ally_hud_font
         x, y = 10, SCREEN_HEIGHT - 90
         for ally in self.allies:
             cfg = ALLY_CONFIGS.get(ally.ally_type, {})
