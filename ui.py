@@ -142,8 +142,14 @@ class _TitleSpark:
         return self.life > 0
 
     def draw(self, surface):
-        a  = int(255 * self.life / self.max_life)
         sz = max(1, self.size)
+        if _IS_ANDROID:
+            # no per-spark SRCALPHA surface on Android
+            if self.life > 4:
+                pygame.draw.circle(surface, (self.r, self.g, self.b),
+                                   (int(self.x), int(self.y)), sz)
+            return
+        a  = int(255 * self.life / self.max_life)
         s  = pygame.Surface((sz*2+2,sz*2+2), pygame.SRCALPHA)
         pygame.draw.circle(s, (self.r,self.g,self.b,a), (sz+1,sz+1), sz+1)
         surface.blit(s, (int(self.x)-sz-1, int(self.y)-sz-1))
@@ -206,19 +212,21 @@ class Button:
                                  border_radius=self.border_radius + expand)
                 surface.blit(gs, (gr.x, gr.y))
 
-        # Drop shadow
-        sh = pygame.Surface((r.width+4, r.height+5), pygame.SRCALPHA)
-        pygame.draw.rect(sh, (0,0,0,80), sh.get_rect(), border_radius=self.border_radius+2)
-        surface.blit(sh, (r.x-2, r.y+4))
+        # Drop shadow — skip on Android (per-frame SRCALPHA alloc is too expensive)
+        if not _IS_ANDROID:
+            sh = pygame.Surface((r.width+4, r.height+5), pygame.SRCALPHA)
+            pygame.draw.rect(sh, (0,0,0,80), sh.get_rect(), border_radius=self.border_radius+2)
+            surface.blit(sh, (r.x-2, r.y+4))
 
         # Body
         pygame.draw.rect(surface, col, r, border_radius=self.border_radius)
 
-        # Inner shine (stronger on hover)
-        shine = pygame.Surface((r.width-4, r.height//2), pygame.SRCALPHA)
-        pygame.draw.rect(shine, (255,255,255,int(30*t+14)),
-                         shine.get_rect(), border_radius=self.border_radius-2)
-        surface.blit(shine, (r.x+2, r.y+2))
+        # Inner shine — skip on Android
+        if not _IS_ANDROID:
+            shine = pygame.Surface((r.width-4, r.height//2), pygame.SRCALPHA)
+            pygame.draw.rect(shine, (255,255,255,int(30*t+14)),
+                             shine.get_rect(), border_radius=self.border_radius-2)
+            surface.blit(shine, (r.x+2, r.y+2))
 
         # Border (brightens on hover)
         bc = tuple(min(255,int(self.border_color[i]*(0.6+0.4*t))) for i in range(3))
@@ -263,10 +271,15 @@ class UIManager:
     BTN_H   = 56
     BTN_GAP = 13
 
-    _hud_bottom_cache = None
-    _hud_top_cache    = None
-    _menu_bg_cache    = None
-    _vignette_cache   = None
+    _hud_bottom_cache  = None
+    _hud_top_cache     = None
+    _menu_bg_cache     = None   # cached semi-transparent menu dim overlay
+    _vignette_cache    = None
+    _pause_dim_cache   = None
+    _pause_card_cache  = None
+    _go_dim_cache      = None
+    _vict_dim_cache    = None
+    _ls_vignette_cache = None   # last-stand border pattern (colorkey)
 
     def __init__(self, game):
         self.game = game
@@ -431,18 +444,17 @@ class UIManager:
         elif self._achievement_queue:
             self._ach_timer = 210
 
-        # Title sparks
-        self._spark_cd -= 1
-        if self._spark_cd <= 0:
-            self._spark_cd  = random.randint(2, 6)
-            self._spark_hue = (self._spark_hue + 11) % 360
-            cx = SCREEN_WIDTH // 2
-            cy = 142
-            self._sparks.append(_TitleSpark(cx, cy, self._spark_hue))
-        self._sparks = [s for s in self._sparks if s.update()]
-
-        # Menu decor
-        self._menu_decor.update()
+        # Title sparks + menu decor — skip on Android
+        if not _IS_ANDROID:
+            self._spark_cd -= 1
+            if self._spark_cd <= 0:
+                self._spark_cd  = random.randint(2, 6)
+                self._spark_hue = (self._spark_hue + 11) % 360
+                cx = SCREEN_WIDTH // 2
+                cy = 142
+                self._sparks.append(_TitleSpark(cx, cy, self._spark_hue))
+            self._sparks = [s for s in self._sparks if s.update()]
+            self._menu_decor.update()
 
         if self._kill_flash > 0:
             self._kill_flash -= 1
@@ -567,10 +579,14 @@ class UIManager:
         bh     = label.get_height() + 12
         bx     = SCREEN_WIDTH // 2 - bw // 2
         by     = 56
-        bg     = pygame.Surface((bw, bh), pygame.SRCALPHA)
-        bg.fill((0, 0, 0, 170))
-        pygame.draw.rect(bg, col, (0, 0, bw, bh), 1, border_radius=6)
-        surface.blit(bg, (bx, by))
+        if _IS_ANDROID:
+            pygame.draw.rect(surface, (15, 15, 15), (bx, by, bw, bh), border_radius=6)
+            pygame.draw.rect(surface, col, (bx, by, bw, bh), 1, border_radius=6)
+        else:
+            bg = pygame.Surface((bw, bh), pygame.SRCALPHA)
+            bg.fill((0, 0, 0, 170))
+            pygame.draw.rect(bg, col, (0, 0, bw, bh), 1, border_radius=6)
+            surface.blit(bg, (bx, by))
         surface.blit(label, (bx + 12, by + 6))
         # Progress bar
         bar_w  = int(bw * done / max(goal, 1))
@@ -581,12 +597,17 @@ class UIManager:
         if not getattr(self.game, '_last_stand_active', False):
             return
         pulse = int(55 + 45 * math.sin(self._tick * 0.12))
-        v = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        for i in range(0, 50, 6):
-            a = max(0, pulse - i * 2)
-            pygame.draw.rect(v, (220, 15, 15, a),
-                             (i, i, SCREEN_WIDTH - i * 2, SCREEN_HEIGHT - i * 2), 3)
-        surface.blit(v, (0, 0))
+        # Build once: colorkey (0,0,0) makes background transparent, set_alpha drives brightness
+        if UIManager._ls_vignette_cache is None:
+            v = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            v.fill((0, 0, 0))
+            v.set_colorkey((0, 0, 0))
+            for i in range(0, 50, 6):
+                pygame.draw.rect(v, (220, 15, 15),
+                                 (i, i, SCREEN_WIDTH - i * 2, SCREEN_HEIGHT - i * 2), 3)
+            UIManager._ls_vignette_cache = v
+        UIManager._ls_vignette_cache.set_alpha(pulse)
+        surface.blit(UIManager._ls_vignette_cache, (0, 0))
         # Timer bar at bottom
         timer = self.game._last_stand_timer
         total = FPS * 8
@@ -778,9 +799,10 @@ class UIManager:
     # ── MAIN MENU ─────────────────────────────────────────────────────────────
     def draw_main_menu(self, surface: pygame.Surface):
         self._draw_menu_bg(surface)
-        self._menu_decor.draw(surface)
-        for sp in self._sparks:
-            sp.draw(surface)
+        if not _IS_ANDROID:
+            self._menu_decor.draw(surface)
+            for sp in self._sparks:
+                sp.draw(surface)
         self._draw_title(surface)
 
         # ── Neon side accent lines flanking buttons ──
@@ -825,17 +847,21 @@ class UIManager:
 
     # ── PAUSE ─────────────────────────────────────────────────────────────────
     def draw_pause(self, surface: pygame.Surface):
-        dim = pygame.Surface((SCREEN_WIDTH,SCREEN_HEIGHT), pygame.SRCALPHA)
-        dim.fill((0,0,0,155))
-        surface.blit(dim,(0,0))
+        if UIManager._pause_dim_cache is None:
+            d = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            d.fill((0, 0, 0)); d.set_alpha(155)
+            UIManager._pause_dim_cache = d
+        surface.blit(UIManager._pause_dim_cache, (0, 0))
 
         CW,CH = 390,350
         cx,cy = SCREEN_WIDTH//2, SCREEN_HEIGHT//2
-        card  = pygame.Surface((CW,CH), pygame.SRCALPHA)
-        card.fill((6,10,28,235))
-        pygame.draw.rect(card,(0,130,255),(0,0,CW,CH),border_radius=16,width=2)
-        pygame.draw.line(card,(0,175,255),(20,1),(CW-20,1),1)
-        surface.blit(card,(cx-CW//2,cy-CH//2))
+        if UIManager._pause_card_cache is None:
+            card = pygame.Surface((CW,CH), pygame.SRCALPHA)
+            card.fill((6,10,28,235))
+            pygame.draw.rect(card,(0,130,255),(0,0,CW,CH),border_radius=16,width=2)
+            pygame.draw.line(card,(0,175,255),(20,1),(CW-20,1),1)
+            UIManager._pause_card_cache = card
+        surface.blit(UIManager._pause_card_cache,(cx-CW//2,cy-CH//2))
 
         y_off = int(3*math.sin(self._tick*0.05))
         title = self._f_lg.render('PAUSED', True, GOLD)
@@ -845,16 +871,17 @@ class UIManager:
 
     # ── GAME OVER ─────────────────────────────────────────────────────────────
     def draw_game_over(self, surface: pygame.Surface):
-        # Dark red dim
-        dim = pygame.Surface((SCREEN_WIDTH,SCREEN_HEIGHT), pygame.SRCALPHA)
-        dim.fill((22,0,0,195))
-        surface.blit(dim,(0,0))
+        if UIManager._go_dim_cache is None:
+            d = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            d.fill((22, 0, 0)); d.set_alpha(195)
+            UIManager._go_dim_cache = d
+        surface.blit(UIManager._go_dim_cache, (0, 0))
 
         t = self._tick
-        # Scanline flicker
-        for y in range(0, SCREEN_HEIGHT, 4):
-            if (y//4 + t//3) % 5 == 0:
-                pygame.draw.line(surface,(0,0,0,30),(0,y),(SCREEN_WIDTH,y))
+        if not _IS_ANDROID:
+            for y in range(0, SCREEN_HEIGHT, 4):
+                if (y//4 + t//3) % 5 == 0:
+                    pygame.draw.line(surface,(0,0,0,30),(0,y),(SCREEN_WIDTH,y))
 
         y_off = int(5*math.sin(t*0.04))
 
@@ -881,8 +908,8 @@ class UIManager:
             ('HIGH SCORE', f'{save.get("high_score",0):,}',              (220,180,90)),
         ]
         PW = 430; PH = len(items)*48+22
-        ps = pygame.Surface((PW,PH), pygame.SRCALPHA)
-        ps.fill((22,5,5,210))
+        ps = pygame.Surface((PW,PH))
+        ps.fill((22,5,5)); ps.set_alpha(210)
         pygame.draw.rect(ps,(175,28,28),(0,0,PW,PH),border_radius=13,width=2)
         surface.blit(ps, ps.get_rect(centerx=SCREEN_WIDTH//2, y=230))
 
@@ -903,9 +930,11 @@ class UIManager:
 
     # ── VICTORY ───────────────────────────────────────────────────────────────
     def draw_victory(self, surface: pygame.Surface):
-        dim = pygame.Surface((SCREEN_WIDTH,SCREEN_HEIGHT), pygame.SRCALPHA)
-        dim.fill((0,22,0,165))
-        surface.blit(dim,(0,0))
+        if UIManager._vict_dim_cache is None:
+            d = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            d.fill((0, 22, 0)); d.set_alpha(165)
+            UIManager._vict_dim_cache = d
+        surface.blit(UIManager._vict_dim_cache, (0, 0))
 
         t = self._tick
 
@@ -969,8 +998,8 @@ class UIManager:
             ('Show FPS',     'ON' if save.get_setting('show_fps') else 'OFF'),
         ]
         PW = 510; PH = len(rows)*66+24
-        ps = pygame.Surface((PW,PH), pygame.SRCALPHA)
-        ps.fill((7,10,28,215))
+        ps = pygame.Surface((PW,PH))
+        ps.fill((7,10,28)); ps.set_alpha(215)
         pygame.draw.rect(ps,(0,115,215),(0,0,PW,PH),border_radius=14,width=2)
         surface.blit(ps, ps.get_rect(centerx=SCREEN_WIDTH//2, y=148))
         for i,(k,v) in enumerate(rows):
@@ -1000,8 +1029,8 @@ class UIManager:
             ('Damage Dealt', f'{stats.get("damage_dealt",0):,}',       (215,145,145)),
         ]
         PW=570; PH=len(rows)*48+22
-        ps=pygame.Surface((PW,PH), pygame.SRCALPHA)
-        ps.fill((7,10,28,215))
+        ps=pygame.Surface((PW,PH))
+        ps.fill((7,10,28)); ps.set_alpha(215)
         pygame.draw.rect(ps,(0,115,215),(0,0,PW,PH),border_radius=14,width=2)
         surface.blit(ps, ps.get_rect(centerx=SCREEN_WIDTH//2, y=108))
         for i,(label,val,col) in enumerate(rows):
@@ -1144,13 +1173,14 @@ class UIManager:
                 yield b
 
     def _draw_menu_bg(self, surface: pygame.Surface):
-        # Draw the live animated background (stars, nebulas, planets, aurora)
         self.game.background.draw(surface)
-        # Dark overlay for text readability
-        dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        dim.fill((0, 4, 20, 88))
-        surface.blit(dim, (0, 0))
-        # Subtle CRT scanlines
+        # Dark overlay — build once, reuse (set_alpha avoids per-frame SRCALPHA alloc)
+        if UIManager._menu_bg_cache is None:
+            d = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+            d.fill((0, 4, 20))
+            d.set_alpha(88)
+            UIManager._menu_bg_cache = d
+        surface.blit(UIManager._menu_bg_cache, (0, 0))
         if not _IS_ANDROID:
             for y in range(0, SCREEN_HEIGHT, 3):
                 pygame.draw.line(surface, (0, 0, 0, 14), (0, y), (SCREEN_WIDTH, y))
@@ -1162,12 +1192,13 @@ class UIManager:
         bob = int(5 * math.sin(t * 0.034))
         cx  = SCREEN_WIDTH // 2
 
-        # Large pulsing glow orb behind title
-        ga  = int(45 + 35 * math.sin(t * 0.050))
-        gw, gh = 860, 170
-        glow = pygame.Surface((gw, gh), pygame.SRCALPHA)
-        pygame.draw.ellipse(glow, (15, 45, 160, ga), glow.get_rect())
-        surface.blit(glow, glow.get_rect(centerx=cx, centery=148 + bob))
+        # Large pulsing glow orb behind title (skip on Android — per-frame large SRCALPHA)
+        if not _IS_ANDROID:
+            ga  = int(45 + 35 * math.sin(t * 0.050))
+            gw, gh = 860, 170
+            glow = pygame.Surface((gw, gh), pygame.SRCALPHA)
+            pygame.draw.ellipse(glow, (15, 45, 160, ga), glow.get_rect())
+            surface.blit(glow, glow.get_rect(centerx=cx, centery=148 + bob))
 
         # ── Chromatic aberration shadow layers ──
         title_full = 'ALIEN  INVASION'

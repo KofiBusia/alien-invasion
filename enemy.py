@@ -4,7 +4,7 @@ import math
 import random
 import pygame
 from settings import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, ENEMY_CONFIGS
+    SCREEN_WIDTH, SCREEN_HEIGHT, ENEMY_CONFIGS, IS_ANDROID
 )
 from bullet import EnemyBullet
 from powerup import maybe_drop_powerup, Coin
@@ -114,10 +114,13 @@ class Enemy(pygame.sprite.Sprite):
             flash.fill((255,255,255,180), special_flags=pygame.BLEND_RGBA_ADD)
             self.image = flash
         elif self._berserk:
-            berserk_img = self._orig.copy()
-            pulse = int(60 + 60 * math.sin(self._tick * 0.18))
-            berserk_img.fill((255, pulse, 0, 120), special_flags=pygame.BLEND_RGBA_ADD)
-            self.image = berserk_img
+            if IS_ANDROID:
+                self.image = self._orig   # skip per-frame copy+fill on mobile
+            else:
+                berserk_img = self._orig.copy()
+                pulse = int(60 + 60 * math.sin(self._tick * 0.18))
+                berserk_img.fill((255, pulse, 0, 120), special_flags=pygame.BLEND_RGBA_ADD)
+                self.image = berserk_img
         else:
             self.image = self._orig
 

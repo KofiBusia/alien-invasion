@@ -291,7 +291,8 @@ class Aurora:
 
 
 class Background:
-    _LAYER_COUNTS = [90, 65, 35]   # far, mid, near — denser
+    _LAYER_COUNTS        = [90, 65, 35]   # far, mid, near — desktop
+    _LAYER_COUNTS_MOBILE = [30, 22, 12]   # ~60% fewer on Android
     _grad: pygame.Surface | None = None   # cached full-coverage gradient
 
     @staticmethod
@@ -327,10 +328,9 @@ class Background:
     def __init__(self):
         if Background._grad is None:
             Background._grad = self._build_gradient()
-        self.stars   = [Star(layer=l)
-                        for l, n in enumerate(self._LAYER_COUNTS)
-                        for _ in range(n)]
-        self.nebulas = [Nebula() for _ in range(8)]   # more nebulas
+        counts = self._LAYER_COUNTS_MOBILE if IS_ANDROID else self._LAYER_COUNTS
+        self.stars   = [Star(layer=l) for l, n in enumerate(counts) for _ in range(n)]
+        self.nebulas = [Nebula() for _ in range(3 if IS_ANDROID else 8)]
         self.planets = [Planet(start_offscreen=False) for _ in range(PLANET_COUNT)]
         self.aurora  = Aurora()
         self.comets  : list[Comet] = []
