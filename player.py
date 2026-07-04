@@ -218,6 +218,14 @@ class Player(pygame.sprite.Sprite):
         self._eng_tick += 1
         thrust = max(0.3, (abs(self.vx) + abs(self.vy)) / (self.speed * 1.414))
         W = 56
+        if IS_ANDROID:
+            # 3 rect draws instead of 30-48 circle draws
+            for i, ex in enumerate([W//4, W//2, W*3//4]):
+                wx = int(self.x) - W//2 + ex
+                wy = int(self.y) + 27
+                fh = max(2, int((8 + (i == 1) * 5) * thrust))
+                pygame.draw.rect(surface, (255, 130, 30), (wx - 1, wy, 3, fh))
+            return
         for i, ex in enumerate([W//4, W//2, W*3//4]):
             wx = int(self.x) - W//2 + ex
             wy = int(self.y) + 26
@@ -319,11 +327,12 @@ class Player(pygame.sprite.Sprite):
         # Blink counter
         self._blink_tick = (self._blink_tick + 1) % 8
 
-        # Purchased trail system
-        moving = math.hypot(self.vx, self.vy) > 0.4
-        eng_world = [(self.x + dx, self.y + dy) for dx, dy in self._engine_offsets]
-        self.trail.emit(eng_world, moving)
-        self.trail.update()
+        # Purchased trail system (skip on Android — too many draw calls)
+        if not IS_ANDROID:
+            moving = math.hypot(self.vx, self.vy) > 0.4
+            eng_world = [(self.x + dx, self.y + dy) for dx, dy in self._engine_offsets]
+            self.trail.emit(eng_world, moving)
+            self.trail.update()
 
         # Expire effects
         self._effects = {k: v for k, v in self._effects.items() if now < v}
@@ -488,8 +497,9 @@ class Player(pygame.sprite.Sprite):
     def draw(self, surface: pygame.Surface):
         now = pygame.time.get_ticks()
 
-        # Purchased trail (drawn behind ship + engines)
-        self.trail.draw(surface)
+        # Purchased trail (desktop only — too many draw calls on Android)
+        if not IS_ANDROID:
+            self.trail.draw(surface)
 
         # Engine thrust flames (always shown behind ship)
         self._draw_flame(surface)

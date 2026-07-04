@@ -453,7 +453,7 @@ SHIP_SKINS = {
 SKIN_ORDER = ['cyan', 'crimson', 'forest', 'plasma', 'gold']
 
 # ── Visual FX ─────────────────────────────────────────────────────────────────
-MAX_PARTICLES       = 180 if IS_ANDROID else 1000
+MAX_PARTICLES       = 35 if IS_ANDROID else 1000
 EXPLOSION_PARTICLES = 38
 HIT_PARTICLES       = 8
 STAR_COUNT          = 160

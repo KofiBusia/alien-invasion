@@ -5,7 +5,7 @@ import math
 import pygame
 from settings import MAX_PARTICLES, SCREEN_SHAKE_DECAY, MAX_SHAKE, IS_ANDROID
 
-_ANDROID_SCALE = 0.25 if IS_ANDROID else 1.0
+_ANDROID_SCALE = 0.10 if IS_ANDROID else 1.0  # very few particles on Android
 
 
 # ── Base particle ─────────────────────────────────────────────────────────────
@@ -283,12 +283,18 @@ class ParticleSystem:
                 Particle(px, py, math.cos(ang)*0.6, math.sin(ang)*0.6, 16, color, 4))
 
     def shockwave_ring(self, x, y, color=(255,200,80), max_radius=120, speed=5):
+        if IS_ANDROID:
+            return
         self.shockwaves.append(Shockwave(x, y, color, max_radius, speed))
 
     def spawn_lightning(self, x1, y1, x2, y2, color=(180,100,255)):
+        if IS_ANDROID:
+            return
         self.lightning.append(Lightning(x1,y1,x2,y2,color))
 
     def damage_number(self, x, y, amount: int, kind: str = 'normal'):
+        if IS_ANDROID:
+            return  # font.render() creates a new surface every frame — too expensive
         self.dmg_numbers.append(DamageNumber(x, y, amount, kind))
 
     # ── Screen shake ──────────────────────────────────────────────────────────
