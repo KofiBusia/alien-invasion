@@ -442,6 +442,16 @@ ACHIEVEMENTS = {
     'endless_veteran': ('Endless Veteran',     'Survive 20 endless waves'),
 }
 
+# ── Ship skins ────────────────────────────────────────────────────────────────
+SHIP_SKINS = {
+    'cyan':    {'name': 'CYAN',    'dark': (18, 50,145),  'mid': (35, 90,215),  'bright': (65,130,255), 'neon': (0,210,255),  'eng': (0,135,255),  'cock': (0,155,235)},
+    'crimson': {'name': 'CRIMSON', 'dark': (120,15, 25),  'mid': (185,35, 50),  'bright': (240,70, 80), 'neon': (255,80,  0), 'eng': (220,60,  0), 'cock': (200,20, 30)},
+    'forest':  {'name': 'FOREST',  'dark': (10, 80, 25),  'mid': (25,155, 55),  'bright': (55,220, 90), 'neon': (0,255,100),  'eng': (0,180, 70),  'cock': (0,160, 60)},
+    'plasma':  {'name': 'PLASMA',  'dark': (70, 10,110),  'mid': (140,30,200),  'bright': (190,70,255), 'neon': (220,0, 255), 'eng': (180,20,255), 'cock': (150,10,220)},
+    'gold':    {'name': 'GOLD',    'dark': (100,75, 10),  'mid': (185,145, 20), 'bright': (255,215, 55),'neon': (255,230,  0),'eng': (220,180,  0),'cock': (200,150,  0)},
+}
+SKIN_ORDER = ['cyan', 'crimson', 'forest', 'plasma', 'gold']
+
 # ── Visual FX ─────────────────────────────────────────────────────────────────
 MAX_PARTICLES       = 180 if IS_ANDROID else 1000
 EXPLOSION_PARTICLES = 38

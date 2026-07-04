@@ -292,7 +292,7 @@ class Aurora:
 
 class Background:
     _LAYER_COUNTS        = [90, 65, 35]   # far, mid, near — desktop
-    _LAYER_COUNTS_MOBILE = [30, 22, 12]   # ~60% fewer on Android
+    _LAYER_COUNTS_MOBILE = [5, 3, 2]      # minimal stars on Android (was 64, now 10)
     _grad: pygame.Surface | None = None   # cached full-coverage gradient
 
     @staticmethod
@@ -330,48 +330,42 @@ class Background:
             Background._grad = self._build_gradient()
         counts = self._LAYER_COUNTS_MOBILE if IS_ANDROID else self._LAYER_COUNTS
         self.stars   = [Star(layer=l) for l, n in enumerate(counts) for _ in range(n)]
-        self.nebulas = [Nebula() for _ in range(3 if IS_ANDROID else 8)]
-        self.planets = [Planet(start_offscreen=False) for _ in range(PLANET_COUNT)]
+        self.nebulas = [] if IS_ANDROID else [Nebula() for _ in range(8)]
+        self.planets = [] if IS_ANDROID else [Planet(start_offscreen=False) for _ in range(PLANET_COUNT)]
         self.aurora  = Aurora()
         self.comets  : list[Comet] = []
         self._tick   = 0
 
     def update(self):
         self._tick += 1
-        for s in self.stars:   s.update()
+        for s in self.stars: s.update()
+        if IS_ANDROID:
+            return
         for n in self.nebulas: n.update()
         for p in self.planets: p.update()
         self.aurora.update()
-        for c in self.comets:  c.update()
+        for c in self.comets: c.update()
         self.comets = [c for c in self.comets if not c.off_screen]
-        if random.random() < COMET_CHANCE * 1.5:   # slightly more comets
+        if random.random() < COMET_CHANCE * 1.5:
             self.comets.append(Comet())
 
     def draw(self, surface: pygame.Surface):
-        # Blit pre-rendered gradient — fully covers every pixel every frame
         surface.blit(Background._grad, (0, 0))
-
-        # Aurora at top of screen
+        if IS_ANDROID:
+            # Minimal path: gradient + 10 simple stars, nothing else
+            for s in self.stars:
+                s.draw(surface, self._tick)
+            return
         self.aurora.draw(surface)
-
-        # Nebulas (furthest back, now richer)
         for n in self.nebulas:
             n.draw(surface)
-
-        # Distant (layer-0) stars
         for s in self.stars:
             if s.layer == 0:
                 s.draw(surface, self._tick)
-
-        # Planets (between far and mid stars)
         for p in self.planets:
             p.draw(surface)
-
-        # Mid + near stars in front of planets
         for s in self.stars:
             if s.layer > 0:
                 s.draw(surface, self._tick)
-
-        # Comets on top
         for c in self.comets:
             c.draw(surface)

@@ -8,7 +8,7 @@ from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, WEAPONS, WEAPON_ORDER, TOTAL_LEVELS, FPS,
     WHITE, BLACK, GOLD, CYAN, RED, GREEN, BLUE, ORANGE, PURPLE,
     UI_BG, UI_BORDER, UI_TEXT, UI_HIGHLIGHT, UI_BUTTON, UI_BUTTON_HOV,
-    UI_SUCCESS, UI_DANGER, ACHIEVEMENTS
+    UI_SUCCESS, UI_DANGER, ACHIEVEMENTS, SHIP_SKINS, SKIN_ORDER
 )
 _IS_ANDROID = bool(_os.environ.get('ANDROID_ROOT'))
 
@@ -399,12 +399,14 @@ class UIManager:
         sw = 135
         y0 = 305
         self._settings_btns = [
-            btn(cx-sw, y0,      'MUSIC  -',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
-            btn(cx+sw, y0,      'MUSIC  +',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
-            btn(cx-sw, y0+gap,  'SFX    -',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
-            btn(cx+sw, y0+gap,  'SFX    +',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
-            btn(cx, y0+gap*2,   'TOGGLE FPS'),
-            btn(cx, y0+gap*3,   'BACK'),
+            btn(cx-sw, y0,        'MUSIC  -',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
+            btn(cx+sw, y0,        'MUSIC  +',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
+            btn(cx-sw, y0+gap,    'SFX    -',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
+            btn(cx+sw, y0+gap,    'SFX    +',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
+            btn(cx-sw, y0+gap*2,  'SKIN   <',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
+            btn(cx+sw, y0+gap*2,  'SKIN   >',  (28,38,88),(48,68,148),(0,100,200),(60,150,255)),
+            btn(cx, y0+gap*3,     'TOGGLE FPS'),
+            btn(cx, y0+gap*4,     'BACK'),
         ]
 
         self._hs_btns  = None
@@ -990,22 +992,25 @@ class UIManager:
         title = self._f_lg.render('SETTINGS', True, GOLD)
         surface.blit(title, title.get_rect(centerx=SCREEN_WIDTH//2, y=80))
 
-        audio = self.game.audio
-        save  = self.game.save
-        rows  = [
-            ('Music Volume', f'{int(audio.music_vol*100):3d} %'),
-            ('SFX Volume',   f'{int(audio.sfx_vol*100):3d} %'),
-            ('Show FPS',     'ON' if save.get_setting('show_fps') else 'OFF'),
+        audio    = self.game.audio
+        save     = self.game.save
+        skin_id  = save.get('ship_skin', 'cyan')
+        skin_dat = SHIP_SKINS.get(skin_id, SHIP_SKINS['cyan'])
+        rows = [
+            ('Music Volume', f'{int(audio.music_vol*100):3d} %', GOLD),
+            ('SFX Volume',   f'{int(audio.sfx_vol*100):3d} %',   GOLD),
+            ('Show FPS',     'ON' if save.get_setting('show_fps') else 'OFF', GOLD),
+            ('Ship Skin',    skin_dat['name'],                    skin_dat['neon']),
         ]
         PW = 510; PH = len(rows)*66+24
         ps = pygame.Surface((PW,PH))
         ps.fill((7,10,28)); ps.set_alpha(215)
         pygame.draw.rect(ps,(0,115,215),(0,0,PW,PH),border_radius=14,width=2)
         surface.blit(ps, ps.get_rect(centerx=SCREEN_WIDTH//2, y=148))
-        for i,(k,v) in enumerate(rows):
+        for i,(k,v,col) in enumerate(rows):
             y = 160+i*66
             kt = self._f_md.render(k, True,(175,195,255))
-            vt = self._f_md.render(v, True, GOLD)
+            vt = self._f_md.render(v, True, col)
             surface.blit(kt, (SCREEN_WIDTH//2-235, y))
             surface.blit(vt, vt.get_rect(right=SCREEN_WIDTH//2+235, y=y))
         for b in self._settings_btns:
@@ -1141,6 +1146,14 @@ class UIManager:
                     kind,delta = labels[lbl]
                     if kind=='music': audio.set_music_volume(audio.music_vol+delta)
                     else:             audio.set_sfx_volume(audio.sfx_vol+delta)
+                elif lbl in ('SKIN   <', 'SKIN   >'):
+                    cur = save.get('ship_skin', 'cyan')
+                    idx = SKIN_ORDER.index(cur) if cur in SKIN_ORDER else 0
+                    delta = -1 if lbl == 'SKIN   <' else 1
+                    new_skin = SKIN_ORDER[(idx + delta) % len(SKIN_ORDER)]
+                    save.set('ship_skin', new_skin)
+                    if self.game.player:
+                        self.game.player.set_skin(new_skin)
                 elif lbl=='TOGGLE FPS':
                     save.set_setting('show_fps', not save.get_setting('show_fps'))
                 elif lbl=='BACK':

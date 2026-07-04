@@ -6,7 +6,7 @@ import pygame
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_SPEED, PLAYER_HEALTH,
     PLAYER_SHIELD, PLAYER_LIVES, PLAYER_INVINCIBILITY_MS, WEAPONS, WEAPON_ORDER,
-    IS_ANDROID
+    IS_ANDROID, SHIP_SKINS, SKIN_ORDER
 )
 from bullet import (Bullet, RainbowBullet, PlasmaBullet, MissileBullet,
                     IonBullet, QuantumBullet, DarkMatterBullet, OmegaBullet)
@@ -58,6 +58,9 @@ class Player(pygame.sprite.Sprite):
         # ── Visuals ───────────────────────────────────────────────────────────
         self._tilt       = 0.0          # current roll angle (degrees), smooth lerp
         self._eng_tick   = 0
+        skin_id = game.save.get('ship_skin', 'cyan')
+        self._skin_id = skin_id if skin_id in SHIP_SKINS else 'cyan'
+        self._skin    = SHIP_SKINS[self._skin_id]
         self._base_img   = self._build_ship()
         self.image       = self._base_img.copy()
         self.rect        = self.image.get_rect(center=(int(self.x), int(self.y)))
@@ -133,59 +136,82 @@ class Player(pygame.sprite.Sprite):
 
     # ── Ship image ────────────────────────────────────────────────────────────
     def _build_ship(self) -> pygame.Surface:
+        sk     = self._skin
+        dark   = sk['dark'];  mid  = sk['mid'];  bright = sk['bright']
+        neon   = sk['neon'];  eng  = sk['eng'];  cock   = sk['cock']
+
+        def _bl(a, b, t):  # blend two colours
+            return tuple(int(a[i] + (b[i]-a[i])*t) for i in range(3))
+        def _dim(c, f):    # darken
+            return tuple(int(v*f) for v in c)
+        def _bri(c, f):    # brighten, capped
+            return tuple(min(255, int(v*f)) for v in c)
+
         W, H = 56, 68
         s = pygame.Surface((W, H), pygame.SRCALPHA)
 
-        # === Main hull — dark navy with bright edge ===
+        # Main hull
         body = [(W//2, 1), (W-3, H-22), (W*3//4, H-13), (W//4, H-13), (3, H-22)]
-        pygame.draw.polygon(s, (18, 50, 145), body)
-        pygame.draw.polygon(s, (65, 130, 255), body, 2)
+        pygame.draw.polygon(s, mid, body)
+        pygame.draw.polygon(s, bright, body, 2)
 
-        # === Hull top highlight (simulates normal-facing light) ===
+        # Hull top highlight
         hi = [(W//2, 1), (W//2+9, H//3), (W//2-9, H//3)]
-        pygame.draw.polygon(s, (30, 80, 185), hi)
+        pygame.draw.polygon(s, _bl(mid, bright, 0.4), hi)
 
-        # === Swept-back wings ===
+        # Swept-back wings
+        wf = _dim(mid, 0.55)
+        wa = _bl(mid, bright, 0.65)
         lwing = [(3, H-22), (0, H-3),  (W//4+2, H-8),  (W//4,   H-13)]
         rwing = [(W-3, H-22),(W, H-3), (W*3//4-2,H-8), (W*3//4, H-13)]
-        pygame.draw.polygon(s, (14, 40, 120), lwing)
-        pygame.draw.polygon(s, (14, 40, 120), rwing)
-        pygame.draw.polygon(s, (50, 125, 240), lwing, 1)
-        pygame.draw.polygon(s, (50, 125, 240), rwing, 1)
+        pygame.draw.polygon(s, wf, lwing)
+        pygame.draw.polygon(s, wf, rwing)
+        pygame.draw.polygon(s, wa, lwing, 1)
+        pygame.draw.polygon(s, wa, rwing, 1)
 
-        # === Wing neon edge lines ===
-        pygame.draw.line(s, (0, 210, 255), (W//4, H-13), (2, H-5), 1)
-        pygame.draw.line(s, (0, 210, 255), (W*3//4, H-13), (W-2, H-5), 1)
-        pygame.draw.line(s, (30, 100, 210), (W//4+2, H-16), (5, H-10), 1)
-        pygame.draw.line(s, (30, 100, 210), (W*3//4-2, H-16), (W-5, H-10), 1)
+        # Wing neon edge lines
+        neon2 = _bl(dark, neon, 0.45)
+        pygame.draw.line(s, neon,  (W//4,     H-13), (2,   H-5),  1)
+        pygame.draw.line(s, neon,  (W*3//4,   H-13), (W-2, H-5),  1)
+        pygame.draw.line(s, neon2, (W//4+2,   H-16), (5,   H-10), 1)
+        pygame.draw.line(s, neon2, (W*3//4-2, H-16), (W-5, H-10), 1)
 
-        # === Central hull spine ===
-        pygame.draw.rect(s, (28, 70, 175), (W//2-7, 8, 14, H-28), border_radius=3)
-        pygame.draw.line(s, (85, 175, 255), (W//2, 6), (W//2, H-26), 1)
+        # Central hull spine
+        pygame.draw.rect(s, _bl(dark, mid, 0.7), (W//2-7, 8, 14, H-28), border_radius=3)
+        pygame.draw.line(s, _bl(mid, bright, 0.8), (W//2, 6), (W//2, H-26), 1)
 
-        # === Cockpit (4-layer depth) ===
-        pygame.draw.ellipse(s, (0, 155, 235),     (W//2-10, 8,  20, 26))
-        pygame.draw.ellipse(s, (70, 205, 255),    (W//2-7,  10, 14, 20))
-        pygame.draw.ellipse(s, (175, 235, 255),   (W//2-4,  12, 8,  12))
-        pygame.draw.ellipse(s, (235, 248, 255),   (W//2-2,  13, 4,  6))
+        # Cockpit (4-layer depth)
+        pygame.draw.ellipse(s, cock,               (W//2-10, 8,  20, 26))
+        pygame.draw.ellipse(s, _bl(cock, neon, 0.5),(W//2-7,  10, 14, 20))
+        pygame.draw.ellipse(s, _bri(cock, 1.9),    (W//2-4,  12, 8,  12))
+        pygame.draw.ellipse(s, (235, 248, 255),    (W//2-2,  13, 4,  6))
 
-        # === Wing weapon pods ===
+        # Wing weapon pods
+        pf = _dim(dark, 0.75)
         for px in (W//4-4, W*3//4-2):
-            pygame.draw.rect(s, (12, 40, 115), (px, H-28, 6, 18), border_radius=2)
-            pygame.draw.rect(s, (0,  185, 255), (px+1, H-30, 4, 5), border_radius=1)
+            pygame.draw.rect(s, pf,   (px, H-28, 6, 18), border_radius=2)
+            pygame.draw.rect(s, neon, (px+1, H-30, 4, 5), border_radius=1)
 
-        # === Tech panel (lower hull) ===
-        pygame.draw.rect(s, (22, 60, 160), (W//2-15, H-30, 30, 6), border_radius=2)
-        pygame.draw.rect(s, (0,  170, 255), (W//2-13, H-29, 26, 2), border_radius=1)
+        # Tech panel (lower hull)
+        pygame.draw.rect(s, _bl(dark, mid, 0.6),  (W//2-15, H-30, 30, 6), border_radius=2)
+        pygame.draw.rect(s, eng,                   (W//2-13, H-29, 26, 2), border_radius=1)
 
-        # === Engine nozzles (3-layer glow) ===
+        # Engine nozzles (3-layer glow)
+        ed = _dim(dark, 0.65)
+        eb = _bl(eng, (255, 255, 255), 0.35)
         for ex in (W//4, W//2, W*3//4):
-            pygame.draw.ellipse(s, (8,   28,  90),  (ex-7, H-14, 14, 16))
-            pygame.draw.ellipse(s, (0,   135, 255), (ex-5, H-12, 10, 12))
-            pygame.draw.ellipse(s, (110, 205, 255), (ex-3, H-10,  6,  8))
-            pygame.draw.circle(s,  (195, 230, 255), (ex,   H-3),   2)
+            pygame.draw.ellipse(s, ed,   (ex-7, H-14, 14, 16))
+            pygame.draw.ellipse(s, eng,  (ex-5, H-12, 10, 12))
+            pygame.draw.ellipse(s, eb,   (ex-3, H-10,  6,  8))
+            pygame.draw.circle(s,  _bri(eb, 1.15), (ex, H-3), 2)
 
         return s
+
+    def set_skin(self, skin_id: str):
+        self._skin_id  = skin_id if skin_id in SHIP_SKINS else 'cyan'
+        self._skin     = SHIP_SKINS[self._skin_id]
+        self._base_img = self._build_ship()
+        self.image     = self._base_img.copy()
 
     # ── Engine flame (drawn separately each frame) ────────────────────────────
     def _draw_flame(self, surface: pygame.Surface):

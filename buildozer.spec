@@ -6,8 +6,8 @@ package.domain = org.manuel
 source.dir = .
 source.include_exts = py,json
 
-version = 2.1.3
-android.numeric_version = 2000007
+version = 2.1.4
+android.numeric_version = 2000008
 
 p4a.bootstrap = sdl2
 
