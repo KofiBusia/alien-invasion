@@ -3,7 +3,7 @@
 import math
 import random
 import pygame
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, IS_ANDROID
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -449,10 +449,18 @@ class BossLaser(pygame.sprite.Sprite):
         self.damage      = damage
         self.life        = 90
         self.max_life    = 90
-        self.image       = pygame.Surface((width+20, SCREEN_HEIGHT - y), pygame.SRCALPHA)
-        self.rect        = self.image.get_rect(midtop=(x, y))
         self._tick       = 0
         self.color       = None
+        # Pre-allocate once at max size — reuse every frame instead of re-creating
+        self._fixed_h = SCREEN_HEIGHT - int(y)
+        self._surf_w  = width + 40   # generous max width for flicker headroom
+        if IS_ANDROID:
+            self.image = pygame.Surface((self._surf_w, self._fixed_h))
+            self.image.fill((0, 0, 0))
+            self.image.set_colorkey((0, 0, 0))
+        else:
+            self.image = pygame.Surface((self._surf_w, self._fixed_h), pygame.SRCALPHA)
+        self.rect = self.image.get_rect(midtop=(int(x), int(y)))
 
     def update(self):
         self._tick += 1
@@ -460,23 +468,26 @@ class BossLaser(pygame.sprite.Sprite):
         if self.life <= 0:
             self.kill()
             return
-        ratio = self.life / self.max_life
+        ratio   = self.life / self.max_life
         flicker = 0.8 + 0.2 * math.sin(self._tick * 0.8)
-        w = int(self.beam_width * flicker)
-        h = SCREEN_HEIGHT - int(self.y)
-        self.image = pygame.Surface((w + 20, h), pygame.SRCALPHA)
+        w       = int(self.beam_width * flicker)
+        h       = self._fixed_h
+        alpha   = int(200 * ratio)
 
-        alpha = int(200 * ratio)
-        pygame.draw.rect(self.image, (255, 30, 30, int(alpha*0.3)),
-                         (0, 0, w+20, h))
-        pygame.draw.rect(self.image, (255, 50, 50, alpha),
-                         (10, 0, w, h))
-        pygame.draw.rect(self.image, (255, 200, 200, min(255, int(alpha*1.3))),
-                         (10+w//3, 0, w//3, h))
-        if self._tick % 4 < 2:
-            for sy in range(0, h, 8):
-                pygame.draw.line(self.image, (255,255,255,int(alpha*0.15)),
-                                 (10, sy), (10+w, sy))
+        if IS_ANDROID:
+            self.image.fill((0, 0, 0))   # clear (colorkey = transparent)
+            pygame.draw.rect(self.image, (255, 50, 50),  (10, 0, w, h))
+            pygame.draw.rect(self.image, (255, 180, 180),(10 + w//3, 0, w//3, h))
+        else:
+            self.image.fill((0, 0, 0, 0))   # clear SRCALPHA
+            pygame.draw.rect(self.image, (255, 30, 30, int(alpha*0.3)), (0, 0, self._surf_w, h))
+            pygame.draw.rect(self.image, (255, 50, 50, alpha),          (10, 0, w, h))
+            pygame.draw.rect(self.image, (255, 200, 200, min(255, int(alpha*1.3))),
+                             (10+w//3, 0, w//3, h))
+            if self._tick % 4 < 2:
+                for sy in range(0, h, 8):
+                    pygame.draw.line(self.image, (255, 255, 255, int(alpha*0.15)),
+                                     (10, sy), (10+w, sy))
         self.rect = self.image.get_rect(midtop=(int(self.x), int(self.y)))
 
     def draw_trail(self, surface):

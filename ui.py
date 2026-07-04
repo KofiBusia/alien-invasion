@@ -267,9 +267,9 @@ class Button:
 
 # ── UIManager ─────────────────────────────────────────────────────────────────
 class UIManager:
-    BTN_W   = 310
-    BTN_H   = 56
-    BTN_GAP = 13
+    BTN_W   = 370
+    BTN_H   = 70
+    BTN_GAP = 14
 
     _hud_bottom_cache  = None
     _hud_top_cache     = None
@@ -478,7 +478,7 @@ class UIManager:
         for boss in self.game.boss_group:
             boss.draw_hud(surface)
 
-        if UIManager._vignette_cache:
+        if UIManager._vignette_cache and not _IS_ANDROID:
             surface.blit(UIManager._vignette_cache, (0,0))
 
         # Overlay elements (on top of vignette)

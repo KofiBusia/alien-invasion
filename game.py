@@ -1631,7 +1631,7 @@ class Game:
 
     # ── World-class screen effects ────────────────────────────────────────────
     def _draw_low_health_vignette(self, surface: pygame.Surface):
-        if not self.player:
+        if IS_ANDROID or not self.player:
             return
         ratio = self.player.health / max(self.player.max_health, 1)
         if ratio >= 0.35:
