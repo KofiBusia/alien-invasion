@@ -195,29 +195,53 @@ class Button:
         col = tuple(int(self.color[i]+(self.hover_color[i]-self.color[i])*t) for i in range(3))
         r   = self.rect
 
+        # Outer glow on hover (desktop only — performance guard)
+        if t > 0.05 and not _IS_ANDROID:
+            bc3 = self.border_color
+            for expand in (8, 5, 3):
+                ga  = int(45 * t / (expand // 2 + 1))
+                gr  = r.inflate(expand * 2, expand * 2)
+                gs  = pygame.Surface((gr.width, gr.height), pygame.SRCALPHA)
+                pygame.draw.rect(gs, (*bc3, ga), gs.get_rect(),
+                                 border_radius=self.border_radius + expand)
+                surface.blit(gs, (gr.x, gr.y))
+
         # Drop shadow
         sh = pygame.Surface((r.width+4, r.height+5), pygame.SRCALPHA)
-        pygame.draw.rect(sh, (0,0,0,75), sh.get_rect(), border_radius=self.border_radius+2)
+        pygame.draw.rect(sh, (0,0,0,80), sh.get_rect(), border_radius=self.border_radius+2)
         surface.blit(sh, (r.x-2, r.y+4))
 
         # Body
         pygame.draw.rect(surface, col, r, border_radius=self.border_radius)
 
-        # Inner shine
+        # Inner shine (stronger on hover)
         shine = pygame.Surface((r.width-4, r.height//2), pygame.SRCALPHA)
-        pygame.draw.rect(shine, (255,255,255,int(25*t+12)),
+        pygame.draw.rect(shine, (255,255,255,int(30*t+14)),
                          shine.get_rect(), border_radius=self.border_radius-2)
         surface.blit(shine, (r.x+2, r.y+2))
 
-        # Border
-        bc = tuple(min(255,int(self.border_color[i]*(0.65+0.35*t))) for i in range(3))
+        # Border (brightens on hover)
+        bc = tuple(min(255,int(self.border_color[i]*(0.6+0.4*t))) for i in range(3))
         pygame.draw.rect(surface, bc, r, border_radius=self.border_radius, width=1+int(t))
 
-        # Top accent
+        # Top accent line
         ac = self.accent_color
         pygame.draw.line(surface, (*ac, int(110+110*t)),
                          (r.x+self.border_radius, r.y+1),
                          (r.right-self.border_radius, r.y+1), 1)
+
+        # Bottom neon underline sweep on hover
+        if t > 0.3 and not _IS_ANDROID:
+            pygame.draw.line(surface, (*ac, int(160*t)),
+                             (r.x+self.border_radius, r.bottom-2),
+                             (r.right-self.border_radius, r.bottom-2), 1)
+
+        # Left indicator bar on hover
+        if t > 0.2:
+            bar_h = int(r.height * t * 0.7)
+            by    = r.centery - bar_h // 2
+            pygame.draw.rect(surface, (*ac, int(200*t)),
+                             (r.x - 4, by, 3, bar_h), border_radius=2)
 
         # Label
         txt = self.font.render(self.label, True, self.text_color)
@@ -460,9 +484,16 @@ class UIManager:
             lt = self._f_hud.render(f'LEVEL  {lvl} / {TOTAL_LEVELS}', True, lc)
         surface.blit(lt, (16, (H-lt.get_height())//2))
 
-        # Score (center) — pulses on new kills
+        # Score (center) with micro-label and NEW RECORD flash
         sc  = self._f_md.render(f'{p.score:,}', True, GOLD)
         surface.blit(sc, sc.get_rect(centerx=SCREEN_WIDTH//2, centery=H//2+1))
+        slbl = self._f_xs.render('SCORE', True, (90, 120, 180))
+        surface.blit(slbl, slbl.get_rect(centerx=SCREEN_WIDTH//2, centery=H//2-10))
+        if p.score > 0 and p.score > self.game.save.get('high_score', 0):
+            nr_a = int(180 + 75 * math.sin(self._tick * 0.22))
+            nr   = self._f_xs.render('▲ NEW RECORD', True, (255, 255, 80))
+            nr.set_alpha(nr_a)
+            surface.blit(nr, nr.get_rect(centerx=SCREEN_WIDTH//2, y=H - 12))
 
         # Coins (right)
         ct = self._f_hud.render(f'  {p.coins:,}', True, GOLD)
@@ -569,32 +600,48 @@ class UIManager:
 
         PAD = 16
 
-        # Lives as glowing ship icons
+        # Lives as glowing ship icons (with engine-glow dot)
         for i in range(p.lives):
-            lx = PAD + i * 30
-            ly = BY + 10
-            pts = [(lx+10,ly),(lx,ly+18),(lx+4,ly+14),(lx+16,ly+14),(lx+20,ly+18)]
-            pygame.draw.polygon(surface, (50,130,255), pts)
-            pygame.draw.polygon(surface, (130,210,255), pts, 1)
+            lx = PAD + i * 32
+            ly = BY + 9
+            pts = [(lx+10,ly),(lx,ly+19),(lx+4,ly+15),(lx+16,ly+15),(lx+20,ly+19)]
+            life_col = (50, 140, 255)
+            pygame.draw.polygon(surface, life_col, pts)
+            pygame.draw.polygon(surface, (140, 215, 255), pts, 1)
+            pygame.draw.circle(surface, (120, 200, 255), (lx+10, ly+20), 2)
 
         # HP segmented bar
         BAR_W = 270; BAR_H = 18
         bx = PAD; by = BY + 34
-        ratio = max(0.0, p.health / max(p.max_health,1))
-        hcol  = (45,215,65) if ratio > 0.50 else (215,175,0) if ratio > 0.25 else (215,45,45)
+        ratio = max(0.0, p.health / max(p.max_health, 1))
+        if ratio > 0.50:
+            hcol = (45, 215, 65)
+        elif ratio > 0.25:
+            hcol = (215, 175, 0)
+        else:
+            # Critical: pulse the bar color
+            pulse_t = (math.sin(pygame.time.get_ticks() * 0.009) + 1) / 2
+            hcol    = (int(180 + 75 * pulse_t), int(20 + 20 * pulse_t), 20)
         _seg_bar(surface, bx, by, BAR_W, BAR_H, ratio, hcol, segments=10)
-        pygame.draw.rect(surface, (60,20,20), (bx,by,BAR_W,BAR_H), border_radius=3, width=1)
-        ht = self._f_xs.render(f'HP  {p.health}/{p.max_health}', True, (240,240,240))
-        surface.blit(ht, (bx+4, by+1))
+        pygame.draw.rect(surface, (60, 20, 20), (bx, by, BAR_W, BAR_H),
+                         border_radius=3, width=1)
+        ht = self._f_xs.render(f'HP  {p.health}/{p.max_health}', True, (240, 240, 240))
+        surface.blit(ht, (bx + 4, by + 1))
+        # Critical warning text
+        if ratio <= 0.25 and p.health > 0:
+            crit_a = int(170 + 85 * math.sin(pygame.time.get_ticks() * 0.009))
+            crit   = self._f_xs.render('⚠ CRITICAL', True, (255, 55, 55))
+            crit.set_alpha(crit_a)
+            surface.blit(crit, (bx + BAR_W + 7, by + 2))
 
         # Shield segmented bar
         SBW = 200; SBH = 12
         sby = by + BAR_H + 6
-        sr  = max(0.0, p.shield / max(p.max_shield,1))
-        _seg_bar(surface, bx, sby, SBW, SBH, sr, (55,115,255), segments=8, bg=(8,10,38))
-        pygame.draw.rect(surface, (25,35,95), (bx,sby,SBW,SBH), border_radius=3, width=1)
-        st = self._f_xs.render(f'SH  {p.shield}/{p.max_shield}', True, (150,195,255))
-        surface.blit(st, (bx+3, sby+1))
+        sr  = max(0.0, p.shield / max(p.max_shield, 1))
+        _seg_bar(surface, bx, sby, SBW, SBH, sr, (55, 115, 255), segments=8, bg=(8, 10, 38))
+        pygame.draw.rect(surface, (25, 35, 95), (bx, sby, SBW, SBH), border_radius=3, width=1)
+        st = self._f_xs.render(f'SH  {p.shield}/{p.max_shield}', True, (150, 195, 255))
+        surface.blit(st, (bx + 3, sby + 1))
 
     # ── WEAPON HUD ────────────────────────────────────────────────────────────
     def _draw_weapon_hud(self, surface, p):
@@ -726,25 +773,50 @@ class UIManager:
     # ── MAIN MENU ─────────────────────────────────────────────────────────────
     def draw_main_menu(self, surface: pygame.Surface):
         self._draw_menu_bg(surface)
-        # Animated ships behind everything
         self._menu_decor.draw(surface)
-        # Title sparks
         for sp in self._sparks:
             sp.draw(surface)
         self._draw_title(surface)
+
+        # ── Neon side accent lines flanking buttons ──
+        if not _IS_ANDROID:
+            cx   = SCREEN_WIDTH // 2
+            btn_l= cx - self.BTN_W // 2 - 18
+            btn_r= cx + self.BTN_W // 2 + 18
+            y0   = self._main_btns[0].rect.top  - 8
+            y1   = self._main_btns[-1].rect.bottom + 8
+            a    = int(110 + 55 * math.sin(self._tick * 0.04))
+            for bx in (btn_l, btn_r):
+                lv = pygame.Surface((3, y1 - y0), pygame.SRCALPHA)
+                for i in range(y1 - y0):
+                    fa = int(a * math.sin(math.pi * i / max(y1 - y0, 1)))
+                    lv.fill((0, 140, 255, fa), (0, i, 3, 1))
+                surface.blit(lv, (bx, y0))
+
         for b in self._main_btns:
             b.draw(surface)
+
+        # ── High score badge ──
+        hs = self.game.save.get('high_score', 0)
+        if hs > 0:
+            hs_lbl = self._f_xs.render('BEST SCORE', True, (120, 155, 210))
+            hs_val = self._f_md.render(f'{hs:,}', True, GOLD)
+            surface.blit(hs_lbl, (SCREEN_WIDTH - hs_val.get_width() - 18, 10))
+            surface.blit(hs_val, (SCREEN_WIDTH - hs_val.get_width() - 12, 26))
+
+        # ── Hint bar ──
         hint = self._f_xs.render(
-            'WASD / Arrows  ·  Space to shoot  ·  Q/E or Scroll to switch weapon  ·  F11 = Fullscreen',
-            True, (72,82,122))
-        surface.blit(hint, hint.get_rect(centerx=SCREEN_WIDTH//2, y=SCREEN_HEIGHT-26))
-        # Daily bonus banner — visible all session once claimed today
+            'WASD · Space to fire · Q/E switch weapon · F11 fullscreen',
+            True, (65, 80, 118))
+        surface.blit(hint, hint.get_rect(centerx=SCREEN_WIDTH // 2, y=SCREEN_HEIGHT - 24))
+
+        # ── Daily bonus banner ──
         daily = getattr(self.game, '_daily_bonus', 0)
         if daily > 0:
             alpha  = int(190 + 65 * math.sin(self._tick * 0.05))
             banner = self._f_md.render(f'  DAILY BONUS  +{daily} COINS  ', True, GOLD)
             banner.set_alpha(alpha)
-            surface.blit(banner, banner.get_rect(centerx=SCREEN_WIDTH//2, y=SCREEN_HEIGHT-68))
+            surface.blit(banner, banner.get_rect(centerx=SCREEN_WIDTH // 2, y=SCREEN_HEIGHT - 68))
 
     # ── PAUSE ─────────────────────────────────────────────────────────────────
     def draw_pause(self, surface: pygame.Surface):
@@ -1067,51 +1139,74 @@ class UIManager:
                 yield b
 
     def _draw_menu_bg(self, surface: pygame.Surface):
-        for y in range(0, SCREEN_HEIGHT, 2):
-            t = y/SCREEN_HEIGHT
-            pygame.draw.line(surface, (int(5+t*7),int(3+t*4),int(20+t*26)),
-                             (0,y),(SCREEN_WIDTH,y+1))
+        # Draw the live animated background (stars, nebulas, planets, aurora)
+        self.game.background.draw(surface)
+        # Dark overlay for text readability
+        dim = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        dim.fill((0, 4, 20, 88))
+        surface.blit(dim, (0, 0))
+        # Subtle CRT scanlines
+        if not _IS_ANDROID:
+            for y in range(0, SCREEN_HEIGHT, 3):
+                pygame.draw.line(surface, (0, 0, 0, 14), (0, y), (SCREEN_WIDTH, y))
         if UIManager._vignette_cache:
-            surface.blit(UIManager._vignette_cache,(0,0))
+            surface.blit(UIManager._vignette_cache, (0, 0))
 
     def _draw_title(self, surface: pygame.Surface):
         t   = self._tick
-        bob = int(5*math.sin(t*0.034))
+        bob = int(5 * math.sin(t * 0.034))
+        cx  = SCREEN_WIDTH // 2
 
-        # Pulsing background glow ellipse
-        ga  = int(50+35*math.sin(t*0.055))
-        gw, gh = 740, 130
-        glow = pygame.Surface((gw,gh), pygame.SRCALPHA)
-        pygame.draw.ellipse(glow, (25,70,190,ga), glow.get_rect())
-        surface.blit(glow, glow.get_rect(centerx=SCREEN_WIDTH//2, centery=148+bob))
+        # Large pulsing glow orb behind title
+        ga  = int(45 + 35 * math.sin(t * 0.050))
+        gw, gh = 860, 170
+        glow = pygame.Surface((gw, gh), pygame.SRCALPHA)
+        pygame.draw.ellipse(glow, (15, 45, 160, ga), glow.get_rect())
+        surface.blit(glow, glow.get_rect(centerx=cx, centery=148 + bob))
 
-        # Drop shadow
-        sh = self._f_xl.render('ALIEN  INVASION', True,(0,0,0))
-        surface.blit(sh, sh.get_rect(centerx=SCREEN_WIDTH//2+5, y=108+bob+5))
+        # ── Chromatic aberration shadow layers ──
+        title_full = 'ALIEN  INVASION'
+        for ox, col, alpha in ((-4, (220, 0, 100), 55), (4, (0, 150, 255), 55)):
+            sh = self._f_xl.render(title_full, True, col)
+            sh.set_alpha(alpha)
+            surface.blit(sh, sh.get_rect(centerx=cx + ox, y=108 + bob))
 
-        # Animated title: hue-shifted "ALIEN" and "INVASION"
-        hue1 = (t*1.2) % 360
-        hue2 = (t*1.2 + 180) % 360
+        # ── Two-tone animated main title ──
+        hue1 = (t * 1.1) % 360
+        hue2 = (t * 1.1 + 165) % 360
         c1   = _hue_rgb(hue1)
         c2   = _hue_rgb(hue2)
         t1   = self._f_xl.render('ALIEN', True, c1)
         t2   = self._f_xl.render('INVASION', True, c2)
-        gap  = 20
-        total_w = t1.get_width()+gap+t2.get_width()
-        x0 = SCREEN_WIDTH//2 - total_w//2
-        surface.blit(t1,(x0, 108+bob))
-        surface.blit(t2,(x0+t1.get_width()+gap, 108+bob))
+        gap  = 22
+        total_w = t1.get_width() + gap + t2.get_width()
+        x0   = cx - total_w // 2
+        surface.blit(t1, (x0, 108 + bob))
+        surface.blit(t2, (x0 + t1.get_width() + gap, 108 + bob))
 
-        # Subtitle
-        sub = self._f_sm.render("Earth's Last Defense  |  Version 3.0", True,(150,180,255))
-        surface.blit(sub, sub.get_rect(centerx=SCREEN_WIDTH//2, y=180+bob))
+        # ── Animated light sweep across title ──
+        if not _IS_ANDROID:
+            prog     = (math.sin(t * 0.016) + 1) / 2
+            sweep_x  = int(x0 + total_w * prog)
+            sw_surf  = pygame.Surface((5, 70), pygame.SRCALPHA)
+            for i in range(5):
+                sw_surf.fill((255, 255, 255, max(0, 110 - i * 22)), (i, 0, 1, 70))
+            surface.blit(sw_surf, (sweep_x, 106 + bob))
 
-        # Divider
-        dw=280
-        pygame.draw.line(surface,(0,90,185),
-                         (SCREEN_WIDTH//2-dw,210),(SCREEN_WIDTH//2+dw,210),1)
-        for dx in (-dw,-dw//2,0,dw//2,dw):
-            pygame.draw.circle(surface,(0,130,240),(SCREEN_WIDTH//2+dx,210),3)
+        # ── Subtitle ──
+        sub = self._f_sm.render(
+            "Earth's Last Defense   ·   v2.0  LEGENDARY", True, (160, 195, 255))
+        sub.set_alpha(210)
+        surface.blit(sub, sub.get_rect(centerx=cx, y=184 + bob))
+
+        # ── Animated divider with traveling dot ──
+        dw = 310
+        pygame.draw.line(surface, (0, 85, 175), (cx - dw, 218), (cx + dw, 218), 1)
+        pygame.draw.line(surface, (0, 55, 130), (cx - dw, 220), (cx + dw, 220), 1)
+        dot_x = cx - dw + int(dw * 2 * ((t % 140) / 140))
+        pygame.draw.circle(surface, (80, 200, 255), (dot_x, 219), 3)
+        for dx in (-dw, -dw//2, 0, dw//2, dw):
+            pygame.draw.circle(surface, (0, 110, 230), (cx + dx, 219), 2)
 
     @staticmethod
     def _hue_rgb(h):

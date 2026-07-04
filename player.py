@@ -136,41 +136,54 @@ class Player(pygame.sprite.Sprite):
         W, H = 56, 68
         s = pygame.Surface((W, H), pygame.SRCALPHA)
 
-        # === Body ===
-        body = [(W//2, 0), (W-4, H-22), (W*3//4, H-14), (W//4, H-14), (4, H-22)]
-        pygame.draw.polygon(s, (30, 65, 150), body)
-        pygame.draw.polygon(s, (70, 130, 240), body, 2)
+        # === Main hull — dark navy with bright edge ===
+        body = [(W//2, 1), (W-3, H-22), (W*3//4, H-13), (W//4, H-13), (3, H-22)]
+        pygame.draw.polygon(s, (18, 50, 145), body)
+        pygame.draw.polygon(s, (65, 130, 255), body, 2)
 
-        # === Side wings ===
-        lwing = [(4, H-22), (0, H-4),  (W//4, H-10), (W//4, H-14)]
-        rwing = [(W-4, H-22), (W, H-4), (W*3//4, H-10), (W*3//4, H-14)]
-        pygame.draw.polygon(s, (25, 55, 130), lwing)
-        pygame.draw.polygon(s, (25, 55, 130), rwing)
-        pygame.draw.polygon(s, (60, 120, 220), lwing, 1)
-        pygame.draw.polygon(s, (60, 120, 220), rwing, 1)
+        # === Hull top highlight (simulates normal-facing light) ===
+        hi = [(W//2, 1), (W//2+9, H//3), (W//2-9, H//3)]
+        pygame.draw.polygon(s, (30, 80, 185), hi)
 
-        # === Wing accent lines ===
-        pygame.draw.line(s, (80, 180, 255), (W//4, H-14), (2, H-6),  1)
-        pygame.draw.line(s, (80, 180, 255), (W*3//4, H-14), (W-2, H-6), 1)
+        # === Swept-back wings ===
+        lwing = [(3, H-22), (0, H-3),  (W//4+2, H-8),  (W//4,   H-13)]
+        rwing = [(W-3, H-22),(W, H-3), (W*3//4-2,H-8), (W*3//4, H-13)]
+        pygame.draw.polygon(s, (14, 40, 120), lwing)
+        pygame.draw.polygon(s, (14, 40, 120), rwing)
+        pygame.draw.polygon(s, (50, 125, 240), lwing, 1)
+        pygame.draw.polygon(s, (50, 125, 240), rwing, 1)
 
-        # === Armour panel (center stripe) ===
-        pygame.draw.rect(s, (40, 80, 170), (W//2-8, 10, 16, H-30), border_radius=3)
-        pygame.draw.line(s, (90, 160, 255), (W//2, 8), (W//2, H-26), 1)
+        # === Wing neon edge lines ===
+        pygame.draw.line(s, (0, 210, 255), (W//4, H-13), (2, H-5), 1)
+        pygame.draw.line(s, (0, 210, 255), (W*3//4, H-13), (W-2, H-5), 1)
+        pygame.draw.line(s, (30, 100, 210), (W//4+2, H-16), (5, H-10), 1)
+        pygame.draw.line(s, (30, 100, 210), (W*3//4-2, H-16), (W-5, H-10), 1)
 
-        # === Cockpit ===
-        pygame.draw.ellipse(s, (0, 180, 255, 220), (W//2-9, 10, 18, 22))
-        pygame.draw.ellipse(s, (120, 230, 255, 160), (W//2-6, 12, 12, 14))
-        pygame.draw.ellipse(s, (220, 245, 255, 90),  (W//2-4, 13, 8, 8))
+        # === Central hull spine ===
+        pygame.draw.rect(s, (28, 70, 175), (W//2-7, 8, 14, H-28), border_radius=3)
+        pygame.draw.line(s, (85, 175, 255), (W//2, 6), (W//2, H-26), 1)
 
-        # === Side cannons ===
-        for cx in (W//4 - 3, W*3//4 - 3):
-            pygame.draw.rect(s, (20, 50, 120), (cx, H-24, 6, 14), border_radius=2)
-            pygame.draw.rect(s, (0, 200, 255),  (cx+1, H-26, 4, 4), border_radius=1)
+        # === Cockpit (4-layer depth) ===
+        pygame.draw.ellipse(s, (0, 155, 235),     (W//2-10, 8,  20, 26))
+        pygame.draw.ellipse(s, (70, 205, 255),    (W//2-7,  10, 14, 20))
+        pygame.draw.ellipse(s, (175, 235, 255),   (W//2-4,  12, 8,  12))
+        pygame.draw.ellipse(s, (235, 248, 255),   (W//2-2,  13, 4,  6))
 
-        # === Engine nozzles ===
+        # === Wing weapon pods ===
+        for px in (W//4-4, W*3//4-2):
+            pygame.draw.rect(s, (12, 40, 115), (px, H-28, 6, 18), border_radius=2)
+            pygame.draw.rect(s, (0,  185, 255), (px+1, H-30, 4, 5), border_radius=1)
+
+        # === Tech panel (lower hull) ===
+        pygame.draw.rect(s, (22, 60, 160), (W//2-15, H-30, 30, 6), border_radius=2)
+        pygame.draw.rect(s, (0,  170, 255), (W//2-13, H-29, 26, 2), border_radius=1)
+
+        # === Engine nozzles (3-layer glow) ===
         for ex in (W//4, W//2, W*3//4):
-            pygame.draw.ellipse(s, (40, 80, 200), (ex-5, H-10, 10, 12))
-            pygame.draw.ellipse(s, (80, 160, 255, 200), (ex-4, H-9, 8, 10))
+            pygame.draw.ellipse(s, (8,   28,  90),  (ex-7, H-14, 14, 16))
+            pygame.draw.ellipse(s, (0,   135, 255), (ex-5, H-12, 10, 12))
+            pygame.draw.ellipse(s, (110, 205, 255), (ex-3, H-10,  6,  8))
+            pygame.draw.circle(s,  (195, 230, 255), (ex,   H-3),   2)
 
         return s
 

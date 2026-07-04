@@ -299,18 +299,18 @@ class Background:
         s = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         for y in range(SCREEN_HEIGHT):
             t = y / SCREEN_HEIGHT
-            r = int(4  + t * 8)
-            g = int(2  + t * 4)
-            b = int(20 + t * 24)
+            r = int(5  + t * 3)
+            g = int(8  + t * 10)
+            b = int(48 + t * 42)
             pygame.draw.line(s, (r, g, b), (0, y), (SCREEN_WIDTH, y))
         return s
 
     _CHAPTER_THEMES = {
-        1: ((4, 2, 20),  (12, 6, 44)),   # deep blue (default)
-        2: ((8, 2, 28),  (20, 4, 60)),   # dark violet
-        3: ((2, 8, 30),  (4, 24, 62)),   # teal nebula
-        4: ((20, 2, 12), (44, 4, 32)),   # crimson void
-        5: ((12, 2, 24), (30, 6, 50)),   # purple chaos
+        1: ((5,  8,  48), (8,  18, 90)),    # cobalt deep space
+        2: ((22, 5,  55), (50, 8,  105)),   # violet nebula
+        3: ((2,  30, 55), (4,  65, 100)),   # teal shockwave
+        4: ((55, 4,  12), (110,8,  28)),    # crimson inferno
+        5: ((35, 0,  70), (75, 5,  130)),   # deep purple chaos
     }
 
     def set_theme(self, chapter: int):
