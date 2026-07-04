@@ -67,8 +67,13 @@ class Shop:
         self._rebuild_items()
 
     def handle_event(self, event: pygame.event.Event) -> bool:
+        mp = None
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mp = event.pos
+        elif event.type == pygame.FINGERDOWN:
+            from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+            mp = (int(event.x * SCREEN_WIDTH), int(event.y * SCREEN_HEIGHT))
+        if mp is not None:
             for name, r in self._tab_rects.items():
                 if r.collidepoint(mp):
                     self._tab = name

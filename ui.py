@@ -248,8 +248,13 @@ class Button:
         surface.blit(txt, txt.get_rect(center=r.center))
 
     def clicked(self, event) -> bool:
-        return (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
-                and self.rect.collidepoint(event.pos))
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.rect.collidepoint(event.pos)
+        if event.type == pygame.FINGERDOWN:
+            x = int(event.x * SCREEN_WIDTH)
+            y = int(event.y * SCREEN_HEIGHT)
+            return self.rect.collidepoint(x, y)
+        return False
 
 
 # ── UIManager ─────────────────────────────────────────────────────────────────

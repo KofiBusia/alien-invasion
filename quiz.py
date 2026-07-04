@@ -1142,6 +1142,13 @@ class QuizManager:
             for i, r in enumerate(self._btn_rects):
                 if r.collidepoint(mx, my):
                     self._submit(i); break
+        if event.type == pygame.FINGERDOWN:
+            from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+            mx = int(event.x * SCREEN_WIDTH)
+            my = int(event.y * SCREEN_HEIGHT)
+            for i, r in enumerate(self._btn_rects):
+                if r.collidepoint(mx, my):
+                    self._submit(i); break
         return None
 
     def _submit(self, idx: int):
