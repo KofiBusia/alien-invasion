@@ -173,6 +173,16 @@ class ParticleSystem:
 
     # ── Emitters ──────────────────────────────────────────────────────────────
     def explosion(self, x, y, color=(255,160,40), count=28, speed=6, size=5):
+        if IS_ANDROID:
+            # 3 bright sparks max — just enough visual feedback, minimal draw calls
+            budget = MAX_PARTICLES - len(self.particles)
+            for _ in range(min(3, budget)):
+                ang = random.uniform(0, math.tau)
+                spd = random.uniform(1.5, speed * 0.6)
+                self.particles.append(
+                    Particle(x, y, math.cos(ang)*spd, math.sin(ang)*spd,
+                             12, color, max(2, size-2), gravity=0.1))
+            return
         count  = max(4, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for _ in range(min(count, budget)):
@@ -188,6 +198,8 @@ class ParticleSystem:
 
     def fire_ring(self, x, y, color=(255, 90, 0), count=28, radius=45):
         """Expanding ring of fire particles — spectacular kill effect."""
+        if IS_ANDROID:
+            return
         count  = max(4, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for i in range(min(count, budget)):
@@ -206,6 +218,8 @@ class ParticleSystem:
 
     def smoke_puff(self, x, y, count=18):
         """Rising grey smoke after explosion."""
+        if IS_ANDROID:
+            return
         count  = max(3, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for _ in range(min(count, budget)):
@@ -220,6 +234,8 @@ class ParticleSystem:
 
     def debris_burst(self, x, y, color=(160, 110, 50), count=14):
         """Hot debris chunks flying outward."""
+        if IS_ANDROID:
+            return
         count  = max(3, int(count * _ANDROID_SCALE))
         budget = MAX_PARTICLES - len(self.particles)
         for _ in range(min(count, budget)):
@@ -249,6 +265,8 @@ class ParticleSystem:
             self.fire_ring(x+dx, y+dy, color, count=14, radius=22)
 
     def hit_sparks(self, x, y, color=(255,255,100), count=8):
+        if IS_ANDROID:
+            return
         count = max(2, int(count * _ANDROID_SCALE))
         for _ in range(count):
             ang = random.uniform(0, math.tau)
@@ -258,6 +276,8 @@ class ParticleSystem:
                          random.randint(8,20), color, 2))
 
     def trail(self, x, y, color, count=2, size=3):
+        if IS_ANDROID:
+            return
         for _ in range(count):
             self.particles.append(
                 Particle(x+random.uniform(-3,3), y+random.uniform(-3,3),
@@ -265,6 +285,8 @@ class ParticleSystem:
                          random.randint(6,14), color, size))
 
     def stars_burst(self, x, y, count=40):
+        if IS_ANDROID:
+            return
         count = max(4, int(count * _ANDROID_SCALE))
         for _ in range(count):
             ang = random.uniform(0, math.tau)
@@ -275,6 +297,8 @@ class ParticleSystem:
                          random.randint(30,60), col, random.randint(3,8), 0.05))
 
     def shield_ripple(self, cx, cy, radius, color=(50,150,255)):
+        if IS_ANDROID:
+            return
         for _ in range(14):
             ang = random.uniform(0, math.tau)
             px  = cx + math.cos(ang)*radius

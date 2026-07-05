@@ -157,6 +157,13 @@ class _TitleSpark:
 
 # ── Segmented bar ─────────────────────────────────────────────────────────────
 def _seg_bar(surface, x, y, w, h, ratio, color, segments=10, bg=(22,8,8)):
+    if _IS_ANDROID:
+        # 2 rects instead of 20+ — saves ~18 draw calls per bar
+        pygame.draw.rect(surface, bg,    (x, y, w, h), border_radius=2)
+        fw = int(w * max(0.0, min(1.0, ratio)))
+        if fw > 0:
+            pygame.draw.rect(surface, color, (x, y, fw, h), border_radius=2)
+        return
     gap   = 2
     sw    = max(4, (w - gap*(segments-1)) // segments)
     filled= ratio * segments
@@ -642,15 +649,19 @@ class UIManager:
 
         PAD = 16
 
-        # Lives as glowing ship icons (with engine-glow dot)
-        for i in range(p.lives):
-            lx = PAD + i * 32
-            ly = BY + 9
-            pts = [(lx+10,ly),(lx,ly+19),(lx+4,ly+15),(lx+16,ly+15),(lx+20,ly+19)]
-            life_col = (50, 140, 255)
-            pygame.draw.polygon(surface, life_col, pts)
-            pygame.draw.polygon(surface, (140, 215, 255), pts, 1)
-            pygame.draw.circle(surface, (120, 200, 255), (lx+10, ly+20), 2)
+        # Lives display
+        if _IS_ANDROID:
+            lv = self._cached_render('lives', f'LIVES  {p.lives}', self._f_hud, (50, 160, 255))
+            surface.blit(lv, (PAD, BY + 5))
+        else:
+            for i in range(p.lives):
+                lx = PAD + i * 32
+                ly = BY + 9
+                pts = [(lx+10,ly),(lx,ly+19),(lx+4,ly+15),(lx+16,ly+15),(lx+20,ly+19)]
+                life_col = (50, 140, 255)
+                pygame.draw.polygon(surface, life_col, pts)
+                pygame.draw.polygon(surface, (140, 215, 255), pts, 1)
+                pygame.draw.circle(surface, (120, 200, 255), (lx+10, ly+20), 2)
 
         # HP segmented bar
         BAR_W = 270; BAR_H = 18
@@ -665,8 +676,9 @@ class UIManager:
             pulse_t = (math.sin(pygame.time.get_ticks() * 0.009) + 1) / 2
             hcol    = (int(180 + 75 * pulse_t), int(20 + 20 * pulse_t), 20)
         _seg_bar(surface, bx, by, BAR_W, BAR_H, ratio, hcol, segments=10)
-        pygame.draw.rect(surface, (60, 20, 20), (bx, by, BAR_W, BAR_H),
-                         border_radius=3, width=1)
+        if not _IS_ANDROID:
+            pygame.draw.rect(surface, (60, 20, 20), (bx, by, BAR_W, BAR_H),
+                             border_radius=3, width=1)
         ht = self._cached_render('hp', f'HP  {int(p.health)}/{p.max_health}', self._f_xs, (240, 240, 240))
         surface.blit(ht, (bx + 4, by + 1))
         # Critical warning text
@@ -681,7 +693,8 @@ class UIManager:
         sby = by + BAR_H + 6
         sr  = max(0.0, p.shield / max(p.max_shield, 1))
         _seg_bar(surface, bx, sby, SBW, SBH, sr, (55, 115, 255), segments=8, bg=(8, 10, 38))
-        pygame.draw.rect(surface, (25, 35, 95), (bx, sby, SBW, SBH), border_radius=3, width=1)
+        if not _IS_ANDROID:
+            pygame.draw.rect(surface, (25, 35, 95), (bx, sby, SBW, SBH), border_radius=3, width=1)
         st = self._cached_render('sh', f'SH  {int(p.shield)}/{p.max_shield}', self._f_xs, (150, 195, 255))
         surface.blit(st, (bx + 3, sby + 1))
 
@@ -691,6 +704,19 @@ class UIManager:
         wpn = WEAPONS.get(p.weapon_key, {})
         col = self._wpn_cols.get(p.weapon_key, CYAN)
         name= wpn.get('name','?')
+
+        if _IS_ANDROID:
+            # Flat cooldown bar — 2 rects + 1 text blit instead of ~12 draw calls
+            bx = SCREEN_WIDTH - 110; bw = 96; bh = 14
+            by_ = BY + 18
+            pygame.draw.rect(surface, (20, 24, 55), (bx, by_, bw, bh), border_radius=3)
+            fw = int(bw * max(0.0, p._shoot_cd_pct))
+            if fw > 0:
+                ready_col = (255, 255, 255) if p._shoot_cd_pct >= 1.0 else col
+                pygame.draw.rect(surface, ready_col, (bx, by_, fw, bh), border_radius=3)
+            wt = self._cached_render('wpn', name, self._f_xs, col)
+            surface.blit(wt, wt.get_rect(centerx=bx + bw//2, y=BY + 36))
+            return
 
         cx_ = SCREEN_WIDTH - 54
         cy_ = BY + 38
@@ -711,12 +737,11 @@ class UIManager:
         # Center dot — full = white flash
         if pct >= 1.0:
             pygame.draw.circle(surface, (255,255,255), (cx_,cy_), 9)
-            if not _IS_ANDROID:
-                t  = self._tick
-                fa = int(180 + 75*math.sin(t*0.25))
-                glow = pygame.Surface((R*2,R*2), pygame.SRCALPHA)
-                pygame.draw.circle(glow, (*col,fa), (R,R), R)
-                surface.blit(glow, (cx_-R, cy_-R), special_flags=pygame.BLEND_ADD)
+            t  = self._tick
+            fa = int(180 + 75*math.sin(t*0.25))
+            glow = pygame.Surface((R*2,R*2), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*col,fa), (R,R), R)
+            surface.blit(glow, (cx_-R, cy_-R), special_flags=pygame.BLEND_ADD)
         else:
             dc = tuple(int(v*0.55) for v in col)
             pygame.draw.circle(surface, dc, (cx_,cy_), 5)

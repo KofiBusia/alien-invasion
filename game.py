@@ -1393,14 +1393,15 @@ class Game:
 
         # Enemy bullet trails + sprites
         for b in self.enemy_bullets:
-            if hasattr(b, 'draw_trail'):
+            if not IS_ANDROID and hasattr(b, 'draw_trail'):
                 b.draw_trail(target)
             target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
 
         # Enemies + health bars
         for e in self.enemies:
             target.blit(e.image, (e.rect.x + ox, e.rect.y + oy))
-            e.draw_health_bar(target)
+            if not IS_ANDROID:
+                e.draw_health_bar(target)
 
         # Boss + shield + rage glow
         for boss in self.boss_group:
@@ -1412,7 +1413,8 @@ class Game:
         # Allies + health bars
         for ally in self.allies:
             target.blit(ally.image, (ally.rect.x + ox, ally.rect.y + oy))
-            ally.draw_health_bar(target)
+            if not IS_ANDROID:
+                ally.draw_health_bar(target)
 
         # Ally bullets
         for b in self.ally_bullets:
@@ -1424,7 +1426,7 @@ class Game:
 
         # Player bullet trails + sprites
         for b in self.player_bullets:
-            if hasattr(b, 'draw_trail'):
+            if not IS_ANDROID and hasattr(b, 'draw_trail'):
                 b.draw_trail(target)
             target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
 

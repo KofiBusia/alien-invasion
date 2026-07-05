@@ -292,7 +292,7 @@ class Aurora:
 
 class Background:
     _LAYER_COUNTS        = [90, 65, 35]   # far, mid, near — desktop
-    _LAYER_COUNTS_MOBILE = [5, 3, 2]      # minimal stars on Android (was 64, now 10)
+    _LAYER_COUNTS_MOBILE = [0, 0, 0]      # zero stars on Android — gradient only
     _grad: pygame.Surface | None = None   # cached full-coverage gradient
 
     @staticmethod
