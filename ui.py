@@ -538,8 +538,9 @@ class UIManager:
         # Coins (right)
         ct = self._cached_render('coins', f'  {p.coins:,}', self._f_hud, GOLD)
         bx = SCREEN_WIDTH - ct.get_width() - 22
-        pygame.draw.circle(surface, GOLD, (bx-8, H//2), 8)
-        pygame.draw.circle(surface, (255,240,110), (bx-8, H//2), 5)
+        if not _IS_ANDROID:
+            pygame.draw.circle(surface, GOLD, (bx-8, H//2), 8)
+            pygame.draw.circle(surface, (255,240,110), (bx-8, H//2), 5)
         surface.blit(ct, (bx, (H-ct.get_height())//2))
 
         # Kill counter (right side under coins)
@@ -552,19 +553,20 @@ class UIManager:
         kt = self._cached_render('kills', f'KILLS: {kills:,}', kf, kc)
         surface.blit(kt, (SCREEN_WIDTH-kt.get_width()-16, H-14))
 
-        # Perk build dots — colored circles for each perk the player has picked
-        try:
-            history = self.game._perk_screen._history
-            if history:
-                dot_x0 = 200
-                for i, pk in enumerate(history[:18]):
-                    col  = pk.get('color', (180, 180, 180))
-                    dxc  = dot_x0 + i * 16
-                    pygame.draw.circle(surface, col, (dxc, H // 2), 6)
-                    bright = tuple(min(255, v + 80) for v in col)
-                    pygame.draw.circle(surface, bright, (dxc, H // 2), 3)
-        except Exception:
-            pass
+        # Perk build dots — skip on Android (up to 36 draw.circle calls)
+        if not _IS_ANDROID:
+            try:
+                history = self.game._perk_screen._history
+                if history:
+                    dot_x0 = 200
+                    for i, pk in enumerate(history[:18]):
+                        col  = pk.get('color', (180, 180, 180))
+                        dxc  = dot_x0 + i * 16
+                        pygame.draw.circle(surface, col, (dxc, H // 2), 6)
+                        bright = tuple(min(255, v + 80) for v in col)
+                        pygame.draw.circle(surface, bright, (dxc, H // 2), 3)
+            except Exception:
+                pass
 
     def _draw_combo_display(self, surface):
         combo = self.game._combo

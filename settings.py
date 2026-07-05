@@ -396,12 +396,21 @@ def get_level_config(level: int) -> dict:
     tank_kind    = enemies[2]
     destr_kind   = enemies[3]
 
-    enemy_counts = {
-        scout_kind:   min(int(5 + ch_level * 2.0),           28),
-        fighter_kind: min(int(max(0, ch_level - 1) * 1.5),   16),
-        tank_kind:    min(int(max(0, ch_level - 3)),          10),
-        destr_kind:   min(int(max(0, ch_level - 7) * 0.7),    7),
-    }
+    if IS_ANDROID:
+        # Android: cap total enemies at ~14 to stay within draw budget
+        enemy_counts = {
+            scout_kind:   min(int(3 + ch_level * 1.0),          8),
+            fighter_kind: min(int(max(0, ch_level - 1) * 0.7),  4),
+            tank_kind:    min(int(max(0, ch_level - 3)),         2),
+            destr_kind:   min(int(max(0, ch_level - 7) * 0.5),  2),
+        }
+    else:
+        enemy_counts = {
+            scout_kind:   min(int(5 + ch_level * 2.0),           28),
+            fighter_kind: min(int(max(0, ch_level - 1) * 1.5),   16),
+            tank_kind:    min(int(max(0, ch_level - 3)),          10),
+            destr_kind:   min(int(max(0, ch_level - 7) * 0.7),    7),
+        }
 
     return {
         'level':          level,

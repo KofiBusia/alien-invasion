@@ -377,6 +377,8 @@ class Player(pygame.sprite.Sprite):
         cx, cy  = self.x, self.y - self.rect.height // 2 + 4
 
         def add(b):
+            if IS_ANDROID and len(bullets) >= 12:
+                return  # hard cap — each bullet is a blit call every frame
             if self.perk_piercing and hasattr(b, 'piercing'):
                 b.piercing = True
             bullets.add(b)

@@ -51,9 +51,10 @@ class Bullet(pygame.sprite.Sprite):
         self.image = surf
 
     def update(self):
-        self._trail.append((self.x, self.y))
-        if len(self._trail) > 3:
-            self._trail.pop(0)
+        if not IS_ANDROID:
+            self._trail.append((self.x, self.y))
+            if len(self._trail) > 3:
+                self._trail.pop(0)
 
         self.x += self.vx
         self.y += self.vy

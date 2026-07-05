@@ -77,6 +77,9 @@ class PowerUp(pygame.sprite.Sprite):
 
     def draw_label(self, surface: pygame.Surface):
         """Draw floating name text above power-up."""
+        import os as _os
+        if _os.environ.get('ANDROID_ROOT'):
+            return
         if PowerUp._label_font is None:
             PowerUp._label_font = pygame.font.SysFont('consolas', 10)
         font = PowerUp._label_font

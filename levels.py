@@ -387,7 +387,8 @@ class LevelManager:
         remain  = len(self.game.enemies)
         chapter = self.cfg['chapter']
         ch_lvl  = self.cfg['chapter_level']
-        txt = self._wave_font.render(
-            f'Ch {chapter} · Lv {ch_lvl}  |  Enemies: {remain}  |  Wave: {spawned}/{total}',
-            True, (180,180,255))
-        surface.blit(txt, (10, 70))
+        text = f'Ch {chapter} · Lv {ch_lvl}  |  Enemies: {remain}  |  Wave: {spawned}/{total}'
+        # Cache — only re-render when the text content changes
+        if not hasattr(self, '_wave_txt_cache') or self._wave_txt_cache[0] != text:
+            self._wave_txt_cache = (text, self._wave_font.render(text, True, (180, 180, 255)))
+        surface.blit(self._wave_txt_cache[1], (10, 70))
