@@ -879,6 +879,8 @@ class Game:
 
     def screen_flash(self, color=(255,0,0), alpha=90):
         """Trigger a full-screen color flash (damage, boss, etc.)."""
+        if IS_ANDROID:
+            return  # SRCALPHA fill+blit is expensive; skip on mobile
         self._flash_color = color
         self._flash_alpha = max(self._flash_alpha, alpha)
 
@@ -1378,57 +1380,82 @@ class Game:
         else:
             target = self.screen
 
-        # Asteroids (before enemies so they appear behind bullets)
-        for ast in self.asteroids:
-            target.blit(ast.image, (ast.rect.x + ox, ast.rect.y + oy))
+        if IS_ANDROID:
+            # Batch blits: 1 JNI call per group instead of 1 per sprite
+            # ox=oy=0 always on Android (shake disabled), so use .topleft directly
+            if self.asteroids:
+                target.blits([(s.image, s.rect.topleft) for s in self.asteroids])
+            if self.powerups:
+                target.blits([(s.image, s.rect.topleft) for s in self.powerups])
+            if self.coins_group:
+                target.blits([(s.image, s.rect.topleft) for s in self.coins_group])
+            if self.enemy_bullets:
+                target.blits([(s.image, s.rect.topleft) for s in self.enemy_bullets])
+            if self.enemies:
+                target.blits([(s.image, s.rect.topleft) for s in self.enemies])
+            for boss in self.boss_group:
+                boss.draw_shield(target)
+                target.blit(boss.image, boss.rect.topleft)
+                boss.draw_hud(self.screen)
+                boss.draw_rage_aura(target)
+            if self.allies:
+                target.blits([(s.image, s.rect.topleft) for s in self.allies])
+            if self.ally_bullets:
+                target.blits([(s.image, s.rect.topleft) for s in self.ally_bullets])
+            if self.player:
+                self.player.draw(target)
+            if self.player_bullets:
+                target.blits([(s.image, s.rect.topleft) for s in self.player_bullets])
+        else:
+            # Asteroids (before enemies so they appear behind bullets)
+            for ast in self.asteroids:
+                target.blit(ast.image, (ast.rect.x + ox, ast.rect.y + oy))
 
-        # Power-ups
-        for pu in self.powerups:
-            target.blit(pu.image, (pu.rect.x + ox, pu.rect.y + oy))
-            pu.draw_label(target)
+            # Power-ups
+            for pu in self.powerups:
+                target.blit(pu.image, (pu.rect.x + ox, pu.rect.y + oy))
+                pu.draw_label(target)
 
-        # Coins
-        for c in self.coins_group:
-            target.blit(c.image, (c.rect.x + ox, c.rect.y + oy))
+            # Coins
+            for c in self.coins_group:
+                target.blit(c.image, (c.rect.x + ox, c.rect.y + oy))
 
-        # Enemy bullet trails + sprites
-        for b in self.enemy_bullets:
-            if not IS_ANDROID and hasattr(b, 'draw_trail'):
-                b.draw_trail(target)
-            target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
+            # Enemy bullet trails + sprites
+            for b in self.enemy_bullets:
+                if hasattr(b, 'draw_trail'):
+                    b.draw_trail(target)
+                target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
 
-        # Enemies + health bars
-        for e in self.enemies:
-            target.blit(e.image, (e.rect.x + ox, e.rect.y + oy))
-            if not IS_ANDROID:
+            # Enemies + health bars
+            for e in self.enemies:
+                target.blit(e.image, (e.rect.x + ox, e.rect.y + oy))
                 e.draw_health_bar(target)
 
-        # Boss + shield + rage glow
-        for boss in self.boss_group:
-            boss.draw_shield(target)
-            target.blit(boss.image, (boss.rect.x + ox, boss.rect.y + oy))
-            boss.draw_hud(self.screen)
-            boss.draw_rage_aura(target)
+            # Boss + shield + rage glow
+            for boss in self.boss_group:
+                boss.draw_shield(target)
+                target.blit(boss.image, (boss.rect.x + ox, boss.rect.y + oy))
+                boss.draw_hud(self.screen)
+                boss.draw_rage_aura(target)
 
-        # Allies + health bars
-        for ally in self.allies:
-            target.blit(ally.image, (ally.rect.x + ox, ally.rect.y + oy))
-            if not IS_ANDROID:
+            # Allies + health bars
+            for ally in self.allies:
+                target.blit(ally.image, (ally.rect.x + ox, ally.rect.y + oy))
                 ally.draw_health_bar(target)
 
-        # Ally bullets
-        for b in self.ally_bullets:
-            target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
+            # Ally bullets
+            for b in self.ally_bullets:
+                target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
 
-        # Player
-        if self.player:
-            self.player.draw(target)
+            # Player
+            if self.player:
+                self.player.draw(target)
 
-        # Player bullet trails + sprites
-        for b in self.player_bullets:
-            if not IS_ANDROID and hasattr(b, 'draw_trail'):
-                b.draw_trail(target)
-            target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
+            # Player bullet trails + sprites
+            for b in self.player_bullets:
+                if hasattr(b, 'draw_trail'):
+                    b.draw_trail(target)
+                target.blit(b.image, (b.rect.x + ox, b.rect.y + oy))
 
         # Glow pass (additive — desktop only; too expensive on Android)
         if not IS_ANDROID:

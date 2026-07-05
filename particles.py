@@ -323,6 +323,8 @@ class ParticleSystem:
 
     # ── Screen shake ──────────────────────────────────────────────────────────
     def shake(self, intensity: float):
+        if IS_ANDROID:
+            return  # prevents per-frame Surface alloc in _draw_game_world
         self._intensity = min(max(self._intensity, intensity), MAX_SHAKE)
 
     @property
